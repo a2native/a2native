@@ -400,18 +400,9 @@ impl eframe::App for A2NApp {
         self.apply_theme(ctx);
 
         // ── Security banner (always visible at the top) ───────────────────────
-        egui::TopBottomPanel::top("security_banner")
-            .frame(
-                egui::Frame::default()
-                    .fill(egui::Color32::from_rgb(255, 200, 0))
-                    .inner_margin(egui::Margin::symmetric(10.0, 5.0)),
-            )
-            .show(ctx, |ui| {
-                ui.colored_label(
-                    egui::Color32::from_rgb(40, 25, 0),
-                    self.banner_text,
-                );
-            });
+        // Keep banner in CentralPanel (not TopBottomPanel) so the window width
+        // constraint applies and Label::wrap_mode actually wraps the text.
+        // It is placed above the ScrollArea so it stays pinned at the top.
 
         // ── Session mode: poll for IPC commands ──────────────────────────────
         let mut close_daemon = false;
@@ -492,6 +483,21 @@ impl eframe::App for A2NApp {
 
         // ── Main form panel ───────────────────────────────────────────────────
         egui::CentralPanel::default().show(ctx, |ui| {
+            // Banner pinned at top, outside the scroll area
+            egui::Frame::default()
+                .fill(egui::Color32::from_rgb(255, 200, 0))
+                .inner_margin(egui::Margin::symmetric(10.0, 6.0))
+                .show(ui, |ui| {
+                    let wrap_width = ui.available_width();
+                    let job = egui::text::LayoutJob::simple(
+                        self.banner_text.to_string(),
+                        egui::FontId::proportional(14.0),
+                        egui::Color32::from_rgb(40, 25, 0),
+                        wrap_width,
+                    );
+                    ui.add(egui::Label::new(job).wrap_mode(egui::TextWrapMode::Wrap));
+                });
+            ui.add_space(4.0);
             egui::ScrollArea::vertical().show(ui, |ui| {
                 if let Some(title) = &self.input.title {
                     ui.label(egui::RichText::new(title).size(20.0).strong());
@@ -589,7 +595,13 @@ fn setup_fonts_and_style(ctx: &egui::Context) {
 
 /// Detect the best-fit UI language tag from the running system.
 /// Returns a short BCP-47-like tag, e.g. "zh-CN", "ja", "fr".
+/// The `A2N_LANG` environment variable overrides auto-detection.
 fn detect_ui_language() -> String {
+    if let Ok(override_lang) = std::env::var("A2N_LANG") {
+        if !override_lang.is_empty() {
+            return override_lang.replace('_', "-");
+        }
+    }
     // sys-locale reads $LANG / $LC_ALL on Unix; Win32 GetUserDefaultLocaleName on Windows.
     sys_locale::get_locale()
         .unwrap_or_else(|| "en".to_string())
