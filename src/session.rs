@@ -4,8 +4,6 @@
 //! the system temp directory records the TCP port of the running daemon, making
 //! the daemon discoverable by subsequent CLI invocations with the same UUID.
 
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
 use std::path::PathBuf;
@@ -15,13 +13,19 @@ use crate::protocol::{A2NInput, A2NOutput, IpcMessage};
 
 // ── Port file helpers ─────────────────────────────────────────────────────────
 
-/// Derive a filesystem-safe hex component from the caller-supplied UUID string.
-/// Hashing prevents path traversal (e.g. `../../etc/passwd`) while preserving
-/// a stable mapping from UUID → port file name.
+/// Sanitise the caller-supplied UUID so it is safe to embed in a filename.
+///
+/// Keeps only ASCII alphanumerics, hyphens, and underscores (all of which are
+/// path-safe on every supported OS).  This prevents path traversal while
+/// preserving a deterministic, readable mapping — unlike a hash, the output
+/// won't silently diverge across Rust versions or builds.
 fn safe_uuid_component(uuid: &str) -> String {
-    let mut hasher = DefaultHasher::new();
-    uuid.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
+    let s: String = uuid
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .take(64)
+        .collect();
+    if s.is_empty() { "default".to_string() } else { s }
 }
 
 fn port_file(uuid: &str) -> PathBuf {
@@ -89,15 +93,12 @@ pub fn send_close(uuid: &str) {
     remove_port(uuid);
 }
 
-/// Remove any stale port file, then poll until the daemon writes a new one
-/// *and* accepts a TCP connection, or the timeout elapses.
+/// Poll until the daemon writes its port file *and* accepts a TCP connection,
+/// or the timeout elapses.
 ///
-/// Clearing the file first prevents a crashed daemon's leftover file from
-/// causing an immediate (but wrong) `true` return.
+/// The caller is responsible for removing any stale port file **before** spawning
+/// the daemon, so this function does not need to do it.
 pub fn wait_for_daemon(uuid: &str, timeout_secs: u64) -> bool {
-    // Remove stale file so we don't match it below.
-    remove_port(uuid);
-
     let deadline = Instant::now() + Duration::from_secs(timeout_secs);
     while Instant::now() < deadline {
         if let Some(port) = read_port(uuid) {

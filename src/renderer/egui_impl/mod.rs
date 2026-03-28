@@ -257,8 +257,9 @@ fn handle_ipc(stream: std::net::TcpStream, tx: std::sync::mpsc::Sender<IpcComman
                     tx.send(IpcCommand::Update { input, response_tx: resp_tx }).ok();
                     if let Ok(output) = resp_rx.recv() {
                         if let Ok(mut s) = stream_out {
-                            let resp = serde_json::to_string(&output).unwrap();
-                            let _ = writeln!(s, "{resp}");
+                            if let Ok(resp) = serde_json::to_string(&output) {
+                                let _ = writeln!(s, "{resp}");
+                            }
                         }
                     }
                 }
@@ -486,13 +487,15 @@ impl eframe::App for A2NApp {
         // ── Main form panel ───────────────────────────────────────────────────
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
-                if let Some(title) = &self.input.title.clone() {
+                if let Some(title) = &self.input.title {
                     ui.heading(title);
                     ui.add_space(8.0);
                 }
-                let components = self.input.components.clone();
-                for component in &components {
-                    components::render_component(ui, component, &mut self.state);
+                // Split-borrow: `input.components` (immutable) and `state` (mutable)
+                // are separate struct fields, so no clone is needed.
+                let num_components = self.input.components.len();
+                for i in 0..num_components {
+                    components::render_component(ui, &self.input.components[i], &mut self.state);
                     ui.add_space(4.0);
                 }
                 if !self.has_submit_button {
