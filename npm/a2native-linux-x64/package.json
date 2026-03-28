@@ -1,0 +1,10 @@
+{
+  "name": "@a2native/a2native-linux-x64",
+  "version": "0.1.0",
+  "description": "Linux x64 binary for @a2native/a2native",
+  "repository": { "type": "git", "url": "https://github.com/a2native/a2native.git" },
+  "license": "Apache-2.0",
+  "os": ["linux"],
+  "cpu": ["x64"],
+  "files": ["bin/"]
+}

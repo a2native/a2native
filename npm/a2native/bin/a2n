@@ -1,0 +1,48 @@
+#!/usr/bin/env node
+'use strict';
+
+/**
+ * @a2native/a2native — JS shim
+ *
+ * Locates the platform-specific binary installed via optionalDependencies
+ * and execs it with all arguments forwarded.
+ */
+
+const { execFileSync } = require('child_process');
+const path = require('path');
+
+const PLATFORMS = {
+  'win32-x64':    ['@a2native/a2native-win32-x64',    'a2n.exe'],
+  'darwin-x64':   ['@a2native/a2native-darwin-x64',   'a2n'],
+  'darwin-arm64': ['@a2native/a2native-darwin-arm64',  'a2n'],
+  'linux-x64':    ['@a2native/a2native-linux-x64',     'a2n'],
+};
+
+const key = `${process.platform}-${process.arch}`;
+const entry = PLATFORMS[key];
+
+if (!entry) {
+  process.stderr.write(
+    `a2native: unsupported platform "${key}"\n` +
+    `Supported: ${Object.keys(PLATFORMS).join(', ')}\n`
+  );
+  process.exit(1);
+}
+
+const [pkg, bin] = entry;
+let binPath;
+try {
+  binPath = require.resolve(path.join(pkg, 'bin', bin));
+} catch (_) {
+  process.stderr.write(
+    `a2native: could not find binary for "${key}".\n` +
+    `Try reinstalling: npm install @a2native/a2native\n`
+  );
+  process.exit(1);
+}
+
+try {
+  execFileSync(binPath, process.argv.slice(2), { stdio: 'inherit' });
+} catch (err) {
+  process.exit(err.status || 1);
+}
