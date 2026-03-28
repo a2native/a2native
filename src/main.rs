@@ -73,7 +73,8 @@ fn main() {
             return;
         }
 
-        // No daemon running yet — spawn one and wait for it to be ready.
+        // No daemon running yet — clear any stale port file, then spawn.
+        session::remove_port(uuid);
         spawn_daemon(uuid);
         if !session::wait_for_daemon(uuid, 10) {
             eprintln!("error: timed out waiting for session daemon to start");
