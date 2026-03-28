@@ -1,11 +1,38 @@
 # a2native
 
-**A2UI 协议**参考实现 —— 为 AI 代理提供原生 UI 表单，用于收集用户输入。
+**A2UI 协议**参考实现 —— 为 AI 代理提供**原生桌面 UI 表单**，用于收集用户输入。
 
-一个 JSON 进 → 原生窗口 → 一个 JSON 出。无需对话循环，无需 Web 服务器。
+一个 JSON 进 → 原生窗口 → 一个 JSON 出。无需对话循环，无需 Web 服务器，无需浏览器。
 
 > ⚠ **安全提示** —— a2native 渲染的每个窗口顶部均会显示安全警告横幅。
 > 部署前请阅读[安全注意事项](#安全注意事项)。
+
+---
+
+## 在智能体协议栈中的位置
+
+a2native 填补了智能体协议栈中的**原生桌面**层：
+
+| 层级 | 协议 | 用途 |
+|---|---|---|
+| 代理 ↔ 工具/数据 | [MCP](https://modelcontextprotocol.io) | 让代理访问工具、文件、API |
+| 代理 ↔ 代理 | [A2A](https://google.github.io/A2A/) | 代理之间的协调通信 |
+| 代理 ↔ Web UI | [AG-UI](https://github.com/ag-ui-protocol/ag-ui) | 代理与浏览器之间的实时流式集成 |
+| **代理 ↔ 原生桌面** | **A2UI（本项目）** | **通过原生 OS 窗口同步收集表单输入** |
+
+> **A2UI ≠ AG-UI** —— 尽管名称相似，这是两个面向不同环境的独立协议：
+>
+> | | [AG-UI](https://github.com/ag-ui-protocol/ag-ui) | **A2UI**（a2native） |
+> |---|---|---|
+> | 传输层 | SSE / WebSocket 流式 | stdin/stdout 同步 |
+> | 渲染环境 | 浏览器（Web 应用）| 原生 OS 窗口（egui）|
+> | 交互模型 | 实时流式对话 | 请求 → 表单 → 响应 |
+> | 部署依赖 | Node.js 服务端 + 前端 SDK | 单一二进制，零依赖 |
+> | 适用场景 | 嵌入 Web 应用的代理交互 | CLI/脚本代理流水线 |
+>
+> 两者**互补**：AG-UI 处理 Web 端，A2UI 处理原生桌面端。
+
+A2UI 是一个**人机协作（Human-in-the-loop，HITL）**协议 —— 它将控制权交给用户，通过**原生生成式 UI**（由代理在运行时生成组件的表单）收集结构化输入，再将控制权归还给代理。原本需要 10 轮对话的向导，可以变成一个简单的表单。
 
 ---
 
@@ -35,12 +62,12 @@ AI 代理经常需要从用户处收集结构化输入 —— 一个选择、一
 
 ## A2UI 协议
 
-a2native 实现了 **A2UI 协议** —— AI 代理与原生 UI 渲染器之间基于 JSON 的契约。
+a2native 实现了 **A2UI 协议** —— AI 代理与原生桌面 UI 渲染器之间基于 JSON 的契约。A2UI 是我们自己的开放规范，与 [AG-UI](https://github.com/ag-ui-protocol/ag-ui) 不同（见上方对比表）。
 
-当前版本对应 **A2UI v0.1**。机器可读的 Schema 可通过以下方式获取：
+**A2UI v0.1** 是第一个稳定版本。机器可读的 Schema 可通过以下方式获取：
 
 - [schema/a2ui-v0.1.schema.json](schema/a2ui-v0.1.schema.json)（本仓库内）
-- `https://a2native.github.io/schema/a2ui-v0.1.schema.json`（在线托管）
+- [`https://a2native.github.io/schema/a2ui-v0.1.schema.json`](https://a2native.github.io/schema/a2ui-v0.1.schema.json)（在线托管）
 - `a2n schema` —— 在任意安装了 a2n 的机器上直接输出
 
 ### 输入格式
@@ -285,7 +312,8 @@ Apache-2.0 —— 详见 [LICENSE](LICENSE)。
 
 | | |
 |---|---|
-| 协议 | A2UI |
+| 协议 | [A2UI v0.1](schema/a2ui-v0.1.schema.json)（本项目） |
+| 相关协议 | [AG-UI](https://github.com/ag-ui-protocol/ag-ui)（Web 流式，by CopilotKit）|
 | 渲染器 | [egui](https://github.com/emilk/egui) 0.29 |
 | 文件选择器 | [rfd](https://github.com/PolyMeilex/rfd) 0.15 |
 | CLI | [clap](https://github.com/clap-rs/clap) 4 |
