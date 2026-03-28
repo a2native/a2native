@@ -2,12 +2,24 @@ pub mod components;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use eframe::egui;
 
-use crate::protocol::{A2NInput, A2NOutput, ButtonAction, Component, OutputStatus};
+use crate::protocol::{A2NInput, A2NOutput, ButtonAction, Component, IpcMessage, OutputStatus};
 use crate::renderer::Renderer;
+
+// ── IPC command (used internally between IPC threads and the egui app) ────────
+
+pub(crate) enum IpcCommand {
+    Update {
+        input: A2NInput,
+        response_tx: std::sync::mpsc::SyncSender<A2NOutput>,
+    },
+    Close,
+}
+
+// ── FormState ─────────────────────────────────────────────────────────────────
 
 pub struct FormState {
     pub text_values: HashMap<String, String>,
@@ -40,37 +52,22 @@ impl FormState {
         for component in components {
             match component {
                 Component::TextField { id, default_value, .. } => {
-                    state.text_values.insert(
-                        id.clone(),
-                        default_value.clone().unwrap_or_default(),
-                    );
+                    state.text_values.insert(id.clone(), default_value.clone().unwrap_or_default());
                 }
                 Component::Textarea { id, default_value, .. } => {
-                    state.text_values.insert(
-                        id.clone(),
-                        default_value.clone().unwrap_or_default(),
-                    );
+                    state.text_values.insert(id.clone(), default_value.clone().unwrap_or_default());
                 }
                 Component::NumberInput { id, default_value, .. } => {
                     state.number_values.insert(id.clone(), default_value.unwrap_or(0.0));
                 }
                 Component::DatePicker { id, default_value, .. } => {
-                    state.text_values.insert(
-                        id.clone(),
-                        default_value.clone().unwrap_or_default(),
-                    );
+                    state.text_values.insert(id.clone(), default_value.clone().unwrap_or_default());
                 }
                 Component::TimePicker { id, default_value, .. } => {
-                    state.text_values.insert(
-                        id.clone(),
-                        default_value.clone().unwrap_or_default(),
-                    );
+                    state.text_values.insert(id.clone(), default_value.clone().unwrap_or_default());
                 }
                 Component::Dropdown { id, default_value, .. } => {
-                    state.text_values.insert(
-                        id.clone(),
-                        default_value.clone().unwrap_or_default(),
-                    );
+                    state.text_values.insert(id.clone(), default_value.clone().unwrap_or_default());
                 }
                 Component::Checkbox { id, default_value, .. } => {
                     state.bool_values.insert(id.clone(), *default_value);
@@ -79,10 +76,7 @@ impl FormState {
                     state.checkbox_group_values.insert(id.clone(), default_values.clone());
                 }
                 Component::RadioGroup { id, default_value, .. } => {
-                    state.text_values.insert(
-                        id.clone(),
-                        default_value.clone().unwrap_or_default(),
-                    );
+                    state.text_values.insert(id.clone(), default_value.clone().unwrap_or_default());
                 }
                 Component::Slider { id, default_value, min, .. } => {
                     state.number_values.insert(id.clone(), default_value.unwrap_or(*min));
@@ -157,18 +151,16 @@ impl FormState {
     }
 }
 
+// ── One-shot renderer ─────────────────────────────────────────────────────────
+
 pub struct EguiRenderer;
 
 impl EguiRenderer {
-    pub fn new() -> Self {
-        EguiRenderer
-    }
+    pub fn new() -> Self { EguiRenderer }
 }
 
 impl Default for EguiRenderer {
-    fn default() -> Self {
-        Self::new()
-    }
+    fn default() -> Self { Self::new() }
 }
 
 impl Renderer for EguiRenderer {
@@ -186,19 +178,105 @@ impl Renderer for EguiRenderer {
         };
 
         let app = A2NApp::new(input, output_slot_clone);
+        let _ = eframe::run_native(&title, native_options, Box::new(move |_cc| Ok(Box::new(app))));
 
-        let _ = eframe::run_native(
-            &title,
-            native_options,
-            Box::new(move |_cc| Ok(Box::new(app))),
-        );
-
-        let output = output_slot.lock().unwrap().take();
-        output.unwrap_or_else(|| A2NOutput {
+        let result = output_slot.lock().unwrap().take().unwrap_or_else(|| A2NOutput {
             status: OutputStatus::Cancelled,
             values: HashMap::new(),
-        })
+        });
+        result
     }
+}
+
+// ── Session daemon ────────────────────────────────────────────────────────────
+
+/// Start a long-lived window managed through a TCP IPC channel.
+pub fn run_daemon(uuid: &str) {
+    use std::net::TcpListener;
+    use std::sync::mpsc;
+    use std::thread;
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("Failed to bind IPC port");
+    let port = listener.local_addr().unwrap().port();
+    crate::session::write_port(uuid, port);
+
+    let (ipc_tx, ipc_rx) = mpsc::channel::<IpcCommand>();
+
+    {
+        let tx = ipc_tx.clone();
+        thread::spawn(move || {
+            for stream in listener.incoming() {
+                match stream {
+                    Ok(s) => {
+                        let tx2 = tx.clone();
+                        thread::spawn(move || handle_ipc(s, tx2));
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+    }
+
+    // Block until the first form arrives over IPC.
+    let (first_input, first_tx) = loop {
+        match ipc_rx.recv() {
+            Ok(IpcCommand::Update { input, response_tx }) => break (input, response_tx),
+            Ok(IpcCommand::Close) | Err(_) => {
+                crate::session::remove_port(uuid);
+                return;
+            }
+        }
+    };
+
+    let title = first_input.title.clone().unwrap_or_else(|| "A2N Form".to_string());
+    let native_options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_title(&title)
+            .with_inner_size([600.0, 500.0])
+            .with_resizable(true),
+        ..Default::default()
+    };
+
+    let app = A2NApp::new_session(first_input, first_tx, ipc_rx, uuid.to_string());
+    let _ = eframe::run_native(&title, native_options, Box::new(move |_cc| Ok(Box::new(app))));
+
+    crate::session::remove_port(uuid);
+}
+
+fn handle_ipc(stream: std::net::TcpStream, tx: std::sync::mpsc::Sender<IpcCommand>) {
+    use std::io::{BufRead, BufReader, Write};
+
+    let stream_out = stream.try_clone();
+    let mut reader = BufReader::new(&stream);
+    let mut line = String::new();
+    if reader.read_line(&mut line).is_ok() && !line.is_empty() {
+        if let Ok(msg) = serde_json::from_str::<IpcMessage>(line.trim()) {
+            match msg {
+                IpcMessage::Update { input } => {
+                    let (resp_tx, resp_rx) = std::sync::mpsc::sync_channel(0);
+                    tx.send(IpcCommand::Update { input, response_tx: resp_tx }).ok();
+                    if let Ok(output) = resp_rx.recv() {
+                        if let Ok(mut s) = stream_out {
+                            let resp = serde_json::to_string(&output).unwrap();
+                            let _ = writeln!(s, "{resp}");
+                        }
+                    }
+                }
+                IpcMessage::Close => {
+                    tx.send(IpcCommand::Close).ok();
+                }
+            }
+        }
+    }
+}
+
+// ── App ───────────────────────────────────────────────────────────────────────
+
+struct SessionState {
+    uuid: String,
+    ipc_rx: std::sync::mpsc::Receiver<IpcCommand>,
+    pending_response: Option<std::sync::mpsc::SyncSender<A2NOutput>>,
+    waiting: bool,
 }
 
 struct A2NApp {
@@ -207,18 +285,36 @@ struct A2NApp {
     output_slot: Arc<Mutex<Option<A2NOutput>>>,
     start_time: Instant,
     has_submit_button: bool,
+    session: Option<SessionState>,
 }
 
 impl A2NApp {
     fn new(input: A2NInput, output_slot: Arc<Mutex<Option<A2NOutput>>>) -> Self {
         let state = FormState::from_input(&input);
         let has_submit_button = Self::check_has_submit(&input.components);
+        A2NApp { input, state, output_slot, start_time: Instant::now(), has_submit_button, session: None }
+    }
+
+    fn new_session(
+        input: A2NInput,
+        response_tx: std::sync::mpsc::SyncSender<A2NOutput>,
+        ipc_rx: std::sync::mpsc::Receiver<IpcCommand>,
+        uuid: String,
+    ) -> Self {
+        let state = FormState::from_input(&input);
+        let has_submit_button = Self::check_has_submit(&input.components);
         A2NApp {
             input,
             state,
-            output_slot,
+            output_slot: Arc::new(Mutex::new(None)),
             start_time: Instant::now(),
             has_submit_button,
+            session: Some(SessionState {
+                uuid,
+                ipc_rx,
+                pending_response: Some(response_tx),
+                waiting: false,
+            }),
         }
     }
 
@@ -227,9 +323,7 @@ impl A2NApp {
             match c {
                 Component::Button { action, .. } if *action == ButtonAction::Submit => return true,
                 Component::Card { children, .. } => {
-                    if Self::check_has_submit(children) {
-                        return true;
-                    }
+                    if Self::check_has_submit(children) { return true; }
                 }
                 _ => {}
             }
@@ -244,19 +338,18 @@ impl A2NApp {
                 Some(false) => egui::Visuals::light(),
                 None => ctx.style().visuals.clone(),
             };
-
             if let Some(color_str) = &theme.accent_color {
                 if let Some(color) = parse_hex_color(color_str) {
                     visuals.selection.bg_fill = color;
                     visuals.hyperlink_color = color;
                 }
             }
-
             ctx.set_visuals(visuals);
         }
     }
 
     fn finalize(&mut self, ctx: &egui::Context, result: FormResult) {
+        let is_submit = matches!(result, FormResult::Submitted);
         let status = match result {
             FormResult::Submitted => OutputStatus::Submitted,
             FormResult::Cancelled => OutputStatus::Cancelled,
@@ -264,14 +357,100 @@ impl A2NApp {
         };
         let values = self.state.collect_output(&self.input.components);
         let output = A2NOutput { status, values };
-        *self.output_slot.lock().unwrap() = Some(output);
-        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+
+        if let Some(session) = &mut self.session {
+            if let Some(tx) = session.pending_response.take() {
+                let _ = tx.send(output);
+            }
+            if is_submit {
+                session.waiting = true;
+            } else {
+                let uuid = session.uuid.clone();
+                crate::session::remove_port(&uuid);
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+        } else {
+            *self.output_slot.lock().unwrap() = Some(output);
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
     }
 }
 
 impl eframe::App for A2NApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Check timeout
+        self.apply_theme(ctx);
+
+        // ── Security banner (always visible at the top) ───────────────────────
+        egui::TopBottomPanel::top("security_banner")
+            .frame(
+                egui::Frame::default()
+                    .fill(egui::Color32::from_rgb(255, 200, 0))
+                    .inner_margin(egui::Margin::symmetric(10.0, 5.0)),
+            )
+            .show(ctx, |ui| {
+                ui.colored_label(
+                    egui::Color32::from_rgb(40, 25, 0),
+                    "⚠  This interface was generated by an AI agent — \
+                     do not enter sensitive information unless you trust the source.",
+                );
+            });
+
+        // ── Session mode: poll for IPC commands ──────────────────────────────
+        let mut close_daemon = false;
+        let mut close_uuid = String::new();
+
+        if let Some(session) = &mut self.session {
+            match session.ipc_rx.try_recv() {
+                Ok(IpcCommand::Update { input, response_tx }) => {
+                    self.input = input;
+                    self.state = FormState::from_input(&self.input);
+                    self.has_submit_button = Self::check_has_submit(&self.input.components);
+                    self.start_time = Instant::now();
+                    session.pending_response = Some(response_tx);
+                    session.waiting = false;
+                    let title = self.input.title.clone().unwrap_or_else(|| "A2N Form".to_string());
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
+                }
+                Ok(IpcCommand::Close) => {
+                    if let Some(tx) = session.pending_response.take() {
+                        let _ = tx.send(A2NOutput {
+                            status: OutputStatus::Cancelled,
+                            values: HashMap::new(),
+                        });
+                    }
+                    close_daemon = true;
+                    close_uuid = session.uuid.clone();
+                }
+                Err(_) => {}
+            }
+
+            if session.waiting && !close_daemon {
+                let uuid_prefix = session.uuid.get(..8).unwrap_or(&session.uuid).to_string();
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.add_space(40.0);
+                    ui.vertical_centered(|ui| {
+                        ui.label(
+                            egui::RichText::new("⏳  Waiting for the agent to send the next step…")
+                                .size(15.0),
+                        );
+                        ui.add_space(10.0);
+                        ui.label(
+                            egui::RichText::new(format!("Session: {uuid_prefix}…")).small().weak(),
+                        );
+                    });
+                });
+                ctx.request_repaint_after(Duration::from_millis(100));
+                return;
+            }
+        }
+
+        if close_daemon {
+            crate::session::remove_port(&close_uuid);
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            return;
+        }
+
+        // ── Timeout check ─────────────────────────────────────────────────────
         if let Some(timeout_secs) = self.input.timeout {
             if self.start_time.elapsed().as_secs() >= timeout_secs {
                 self.finalize(ctx, FormResult::Timeout);
@@ -279,28 +458,25 @@ impl eframe::App for A2NApp {
             }
         }
 
-        self.apply_theme(ctx);
-
-        // Check if we should close due to a result being set in state
+        // ── Handle form result set by component interactions ──────────────────
         if self.state.result.is_some() {
             let result = self.state.result.take().unwrap();
             self.finalize(ctx, result);
             return;
         }
 
+        // ── Main form panel ───────────────────────────────────────────────────
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 if let Some(title) = &self.input.title.clone() {
                     ui.heading(title);
                     ui.add_space(8.0);
                 }
-
                 let components = self.input.components.clone();
                 for component in &components {
                     components::render_component(ui, component, &mut self.state);
                     ui.add_space(4.0);
                 }
-
                 if !self.has_submit_button {
                     ui.add_space(8.0);
                     ui.separator();
@@ -311,8 +487,14 @@ impl eframe::App for A2NApp {
                 }
             });
         });
+
+        if self.input.timeout.is_some() {
+            ctx.request_repaint_after(Duration::from_millis(500));
+        }
     }
 }
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 pub fn parse_hex_color(hex: &str) -> Option<egui::Color32> {
     let hex = hex.trim_start_matches('#');
@@ -332,18 +514,15 @@ pub fn parse_hex_color(hex: &str) -> Option<egui::Color32> {
     }
 }
 
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::protocol::{A2NInput, Component, SelectOption};
 
     fn make_input(components: Vec<Component>) -> A2NInput {
-        A2NInput {
-            title: None,
-            timeout: None,
-            theme: None,
-            components,
-        }
+        A2NInput { title: None, timeout: None, theme: None, components }
     }
 
     #[test]
@@ -373,77 +552,67 @@ mod tests {
 
     #[test]
     fn test_form_state_init_text_defaults() {
-        let input = make_input(vec![
-            Component::TextField {
-                id: "name".to_string(),
-                label: None,
-                placeholder: None,
-                required: false,
-                default_value: Some("Alice".to_string()),
-            },
-        ]);
+        let input = make_input(vec![Component::TextField {
+            id: "name".to_string(),
+            label: None,
+            placeholder: None,
+            required: false,
+            default_value: Some("Alice".to_string()),
+        }]);
         let state = FormState::from_input(&input);
         assert_eq!(state.text_values.get("name").map(|s| s.as_str()), Some("Alice"));
     }
 
     #[test]
     fn test_form_state_init_number_defaults() {
-        let input = make_input(vec![
-            Component::NumberInput {
-                id: "age".to_string(),
-                label: None,
-                min: None,
-                max: None,
-                step: None,
-                default_value: Some(25.0),
-            },
-        ]);
+        let input = make_input(vec![Component::NumberInput {
+            id: "age".to_string(),
+            label: None,
+            min: None,
+            max: None,
+            step: None,
+            default_value: Some(25.0),
+        }]);
         let state = FormState::from_input(&input);
         assert_eq!(state.number_values.get("age"), Some(&25.0));
     }
 
     #[test]
     fn test_form_state_init_checkbox() {
-        let input = make_input(vec![
-            Component::Checkbox {
-                id: "agree".to_string(),
-                label: None,
-                default_value: true,
-            },
-        ]);
+        let input = make_input(vec![Component::Checkbox {
+            id: "agree".to_string(),
+            label: None,
+            default_value: true,
+        }]);
         let state = FormState::from_input(&input);
         assert_eq!(state.bool_values.get("agree"), Some(&true));
     }
 
     #[test]
     fn test_form_state_init_checkbox_group() {
-        let input = make_input(vec![
-            Component::CheckboxGroup {
-                id: "tags".to_string(),
-                label: None,
-                options: vec![
-                    SelectOption { value: "a".to_string(), label: "A".to_string() },
-                    SelectOption { value: "b".to_string(), label: "B".to_string() },
-                ],
-                default_values: vec!["a".to_string()],
-            },
-        ]);
+        let input = make_input(vec![Component::CheckboxGroup {
+            id: "tags".to_string(),
+            label: None,
+            options: vec![
+                SelectOption { value: "a".to_string(), label: "A".to_string() },
+                SelectOption { value: "b".to_string(), label: "B".to_string() },
+            ],
+            default_values: vec!["a".to_string()],
+        }]);
         let state = FormState::from_input(&input);
         assert_eq!(state.checkbox_group_values.get("tags"), Some(&vec!["a".to_string()]));
     }
 
     #[test]
     fn test_form_state_init_slider_uses_min_as_default() {
-        let input = make_input(vec![
-            Component::Slider {
-                id: "vol".to_string(),
-                label: None,
-                min: 10.0,
-                max: 50.0,
-                step: None,
-                default_value: None,
-            },
-        ]);
+        let input = make_input(vec![Component::Slider {
+            id: "vol".to_string(),
+            label: None,
+            min: 10.0,
+            max: 50.0,
+            step: None,
+            default_value: None,
+        }]);
         let state = FormState::from_input(&input);
         assert_eq!(state.number_values.get("vol"), Some(&10.0));
     }
@@ -458,11 +627,7 @@ mod tests {
                 required: false,
                 default_value: None,
             },
-            Component::Checkbox {
-                id: "ok".to_string(),
-                label: None,
-                default_value: false,
-            },
+            Component::Checkbox { id: "ok".to_string(), label: None, default_value: false },
             Component::NumberInput {
                 id: "count".to_string(),
                 label: None,
@@ -476,7 +641,6 @@ mod tests {
         let mut state = FormState::from_input(&input);
         *state.text_values.get_mut("name").unwrap() = "Bob".to_string();
         *state.bool_values.get_mut("ok").unwrap() = true;
-
         let values = state.collect_output(&components);
         assert_eq!(values.get("name"), Some(&serde_json::Value::String("Bob".to_string())));
         assert_eq!(values.get("ok"), Some(&serde_json::Value::Bool(true)));
@@ -485,40 +649,33 @@ mod tests {
 
     #[test]
     fn test_check_has_submit_true() {
-        let components = vec![
-            Component::Button {
-                id: "s".to_string(),
-                label: "Submit".to_string(),
-                action: ButtonAction::Submit,
-            },
-        ];
+        let components = vec![Component::Button {
+            id: "s".to_string(),
+            label: "Submit".to_string(),
+            action: ButtonAction::Submit,
+        }];
         let input = make_input(components);
-        let app_has_submit = A2NApp::check_has_submit(&input.components);
-        assert!(app_has_submit);
+        assert!(A2NApp::check_has_submit(&input.components));
     }
 
     #[test]
     fn test_check_has_submit_false() {
-        let components = vec![
-            Component::Text { id: "t".to_string(), content: "hello".to_string() },
-        ];
+        let components = vec![Component::Text { id: "t".to_string(), content: "hello".to_string() }];
         let input = make_input(components);
         assert!(!A2NApp::check_has_submit(&input.components));
     }
 
     #[test]
     fn test_check_has_submit_in_card() {
-        let components = vec![
-            Component::Card {
-                id: "c".to_string(),
-                title: None,
-                children: vec![Component::Button {
-                    id: "b".to_string(),
-                    label: "Go".to_string(),
-                    action: ButtonAction::Submit,
-                }],
-            },
-        ];
+        let components = vec![Component::Card {
+            id: "c".to_string(),
+            title: None,
+            children: vec![Component::Button {
+                id: "b".to_string(),
+                label: "Go".to_string(),
+                action: ButtonAction::Submit,
+            }],
+        }];
         let input = make_input(components);
         assert!(A2NApp::check_has_submit(&input.components));
     }
