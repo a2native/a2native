@@ -1,0 +1,299 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://a2native.github.io/schema/a2ui-v0.1.schema.json",
+  "title": "A2UI Input (v0.1)",
+  "description": "Input format for the A2UI protocol — send this JSON to a2n to render a native UI form and collect user responses.",
+  "type": "object",
+  "required": ["components"],
+  "additionalProperties": false,
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Optional window title shown in the title bar."
+    },
+    "timeout": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Auto-close the window after this many seconds. Output status will be 'timeout'."
+    },
+    "theme": {
+      "type": "object",
+      "description": "Optional visual theme overrides.",
+      "additionalProperties": false,
+      "properties": {
+        "dark_mode": {
+          "type": "boolean",
+          "description": "Force dark (true) or light (false) mode. Defaults to system preference."
+        },
+        "accent_color": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$",
+          "description": "Hex accent color, e.g. '#6C63FF'."
+        }
+      }
+    },
+    "components": {
+      "type": "array",
+      "description": "Ordered list of UI components to render.",
+      "items": {
+        "$ref": "#/$defs/Component"
+      }
+    }
+  },
+  "$defs": {
+    "Component": {
+      "oneOf": [
+        { "$ref": "#/$defs/Text" },
+        { "$ref": "#/$defs/Markdown" },
+        { "$ref": "#/$defs/Image" },
+        { "$ref": "#/$defs/Divider" },
+        { "$ref": "#/$defs/TextField" },
+        { "$ref": "#/$defs/Textarea" },
+        { "$ref": "#/$defs/NumberInput" },
+        { "$ref": "#/$defs/DatePicker" },
+        { "$ref": "#/$defs/TimePicker" },
+        { "$ref": "#/$defs/Dropdown" },
+        { "$ref": "#/$defs/Checkbox" },
+        { "$ref": "#/$defs/CheckboxGroup" },
+        { "$ref": "#/$defs/RadioGroup" },
+        { "$ref": "#/$defs/Slider" },
+        { "$ref": "#/$defs/FileUpload" },
+        { "$ref": "#/$defs/Button" },
+        { "$ref": "#/$defs/Card" }
+      ]
+    },
+    "SelectOption": {
+      "type": "object",
+      "required": ["value", "label"],
+      "additionalProperties": false,
+      "properties": {
+        "value": { "type": "string" },
+        "label": { "type": "string" }
+      }
+    },
+    "Text": {
+      "type": "object",
+      "required": ["id", "type", "content"],
+      "additionalProperties": false,
+      "properties": {
+        "id":      { "type": "string" },
+        "type":    { "const": "text" },
+        "content": { "type": "string", "description": "Plain text to display." }
+      }
+    },
+    "Markdown": {
+      "type": "object",
+      "required": ["id", "type", "content"],
+      "additionalProperties": false,
+      "properties": {
+        "id":      { "type": "string" },
+        "type":    { "const": "markdown" },
+        "content": {
+          "type": "string",
+          "description": "Markdown text. Supports headings (#/##/###) and **bold**."
+        }
+      }
+    },
+    "Image": {
+      "type": "object",
+      "required": ["id", "type", "src"],
+      "additionalProperties": false,
+      "properties": {
+        "id":  { "type": "string" },
+        "type": { "const": "image" },
+        "src": { "type": "string", "description": "File path or URL." },
+        "alt": { "type": "string", "description": "Alt text." }
+      }
+    },
+    "Divider": {
+      "type": "object",
+      "required": ["id", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "id":   { "type": "string" },
+        "type": { "const": "divider" }
+      }
+    },
+    "TextField": {
+      "type": "object",
+      "required": ["id", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "id":            { "type": "string" },
+        "type":          { "const": "text-field" },
+        "label":         { "type": "string" },
+        "placeholder":   { "type": "string" },
+        "required":      { "type": "boolean", "default": false },
+        "default_value": { "type": "string" }
+      },
+      "x-output": "string"
+    },
+    "Textarea": {
+      "type": "object",
+      "required": ["id", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "id":            { "type": "string" },
+        "type":          { "const": "textarea" },
+        "label":         { "type": "string" },
+        "placeholder":   { "type": "string" },
+        "required":      { "type": "boolean", "default": false },
+        "default_value": { "type": "string" }
+      },
+      "x-output": "string"
+    },
+    "NumberInput": {
+      "type": "object",
+      "required": ["id", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "id":            { "type": "string" },
+        "type":          { "const": "number-input" },
+        "label":         { "type": "string" },
+        "min":           { "type": "number" },
+        "max":           { "type": "number" },
+        "step":          { "type": "number" },
+        "default_value": { "type": "number" }
+      },
+      "x-output": "number"
+    },
+    "DatePicker": {
+      "type": "object",
+      "required": ["id", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "id":            { "type": "string" },
+        "type":          { "const": "date-picker" },
+        "label":         { "type": "string" },
+        "required":      { "type": "boolean", "default": false },
+        "default_value": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "description": "YYYY-MM-DD" }
+      },
+      "x-output": "string (YYYY-MM-DD)"
+    },
+    "TimePicker": {
+      "type": "object",
+      "required": ["id", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "id":            { "type": "string" },
+        "type":          { "const": "time-picker" },
+        "label":         { "type": "string" },
+        "required":      { "type": "boolean", "default": false },
+        "default_value": { "type": "string", "pattern": "^\\d{2}:\\d{2}$", "description": "HH:MM" }
+      },
+      "x-output": "string (HH:MM)"
+    },
+    "Dropdown": {
+      "type": "object",
+      "required": ["id", "type", "options"],
+      "additionalProperties": false,
+      "properties": {
+        "id":            { "type": "string" },
+        "type":          { "const": "dropdown" },
+        "label":         { "type": "string" },
+        "options":       { "type": "array", "items": { "$ref": "#/$defs/SelectOption" } },
+        "required":      { "type": "boolean", "default": false },
+        "default_value": { "type": "string" }
+      },
+      "x-output": "string"
+    },
+    "Checkbox": {
+      "type": "object",
+      "required": ["id", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "id":            { "type": "string" },
+        "type":          { "const": "checkbox" },
+        "label":         { "type": "string" },
+        "default_value": { "type": "boolean", "default": false }
+      },
+      "x-output": "boolean"
+    },
+    "CheckboxGroup": {
+      "type": "object",
+      "required": ["id", "type", "options"],
+      "additionalProperties": false,
+      "properties": {
+        "id":             { "type": "string" },
+        "type":           { "const": "checkbox-group" },
+        "label":          { "type": "string" },
+        "options":        { "type": "array", "items": { "$ref": "#/$defs/SelectOption" } },
+        "default_values": { "type": "array", "items": { "type": "string" } }
+      },
+      "x-output": "string[] (selected values)"
+    },
+    "RadioGroup": {
+      "type": "object",
+      "required": ["id", "type", "options"],
+      "additionalProperties": false,
+      "properties": {
+        "id":            { "type": "string" },
+        "type":          { "const": "radio-group" },
+        "label":         { "type": "string" },
+        "options":       { "type": "array", "items": { "$ref": "#/$defs/SelectOption" } },
+        "required":      { "type": "boolean", "default": false },
+        "default_value": { "type": "string" }
+      },
+      "x-output": "string"
+    },
+    "Slider": {
+      "type": "object",
+      "required": ["id", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "id":            { "type": "string" },
+        "type":          { "const": "slider" },
+        "label":         { "type": "string" },
+        "min":           { "type": "number", "default": 0 },
+        "max":           { "type": "number", "default": 100 },
+        "step":          { "type": "number" },
+        "default_value": { "type": "number" }
+      },
+      "x-output": "number"
+    },
+    "FileUpload": {
+      "type": "object",
+      "required": ["id", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "id":       { "type": "string" },
+        "type":     { "const": "file-upload" },
+        "label":    { "type": "string" },
+        "accept":   { "type": "string", "description": "File type filter, e.g. '.pdf,.docx'" },
+        "multiple": { "type": "boolean", "default": false }
+      },
+      "x-output": "string (file path; ';'-separated if multiple=true)"
+    },
+    "Button": {
+      "type": "object",
+      "required": ["id", "type", "label"],
+      "additionalProperties": false,
+      "properties": {
+        "id":     { "type": "string" },
+        "type":   { "const": "button" },
+        "label":  { "type": "string" },
+        "action": {
+          "type": "string",
+          "enum": ["submit", "cancel", "custom"],
+          "default": "submit",
+          "description": "'submit' ends the form and outputs values; 'cancel' closes with status 'cancelled'; 'custom' is reserved."
+        }
+      }
+    },
+    "Card": {
+      "type": "object",
+      "required": ["id", "type", "children"],
+      "additionalProperties": false,
+      "properties": {
+        "id":       { "type": "string" },
+        "type":     { "const": "card" },
+        "title":    { "type": "string" },
+        "children": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Component" },
+          "description": "Nested components rendered inside the card."
+        }
+      }
+    }
+  }
+}
