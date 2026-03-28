@@ -129,7 +129,7 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           echo "Publishing version $VERSION"
-          for dir in npm/a2native npm/a2native-*/; do
+          for dir in npm/a2native/ npm/a2native-*/; do
             node -e "
               const fs = require('fs');
               const file = '${dir}package.json';
