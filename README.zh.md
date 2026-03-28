@@ -37,6 +37,12 @@ AI 代理经常需要从用户处收集结构化输入 —— 一个选择、一
 
 a2native 实现了 **A2UI 协议** —— AI 代理与原生 UI 渲染器之间基于 JSON 的契约。
 
+当前版本对应 **A2UI v0.1**。机器可读的 Schema 可通过以下方式获取：
+
+- [schema/a2ui-v0.1.schema.json](schema/a2ui-v0.1.schema.json)（本仓库内）
+- `https://a2native.github.io/schema/a2ui-v0.1.schema.json`（在线托管）
+- `a2n schema` —— 在任意安装了 a2n 的机器上直接输出
+
 ### 输入格式
 
 ```jsonc
@@ -127,16 +133,35 @@ cargo build --release
 
 ## 使用方法
 
+### 快速参考
+
+```
+a2n [JSON]                   一次性模式：内联 JSON 表单规格
+echo '{...}' | a2n           一次性模式：通过 stdin 管道传入 JSON
+a2n schema                   输出 A2UI 输入 JSON Schema
+a2n help                     显示使用说明
+a2n --help                   显示参数帮助
+a2n --version                显示版本
+```
+
+> **输入优先级：** 内联 JSON 参数 → stdin 管道 → （两者均无时 → 显示帮助）
+
 ### 一次性模式
 
+可以通过内联参数或 stdin 管道提供 JSON：
+
 ```bash
-echo '{"title":"部署确认","components":[
+# 内联参数
+a2n '{"title":"部署确认","components":[
   {"id":"env","type":"dropdown","label":"部署环境",
    "options":[{"value":"prod","label":"生产环境"},
               {"value":"stag","label":"预发布环境"}]},
   {"id":"confirm","type":"checkbox","label":"我已确认变更内容"},
   {"id":"go","type":"button","label":"开始部署","action":"submit"}
-]}' | a2n
+]}'
+
+# 或通过 stdin
+echo '{"title":"部署确认","components":[...]}' | a2n
 ```
 
 用户交互后的输出：
@@ -181,11 +206,17 @@ a2n --close <UUID>
 
 窗口关闭，守护进程干净退出。
 
-### 帮助
+### 帮助与 Schema
 
 ```bash
-a2n --help
-a2n --version
+# 显示使用说明（无 JSON 参数且无 stdin 管道时自动显示）
+a2n help
+
+# 输出完整的 A2UI 输入 JSON Schema
+a2n schema
+
+a2n --help      # 参数说明
+a2n --version   # 版本信息
 ```
 
 ---
