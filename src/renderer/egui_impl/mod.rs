@@ -417,6 +417,13 @@ impl eframe::App for A2NApp {
                     self.state = FormState::from_input(&self.input);
                     self.has_submit_button = Self::check_has_submit(&self.input.components);
                     self.start_time = Instant::now();
+                    // Cancel any previous pending client so it doesn't block forever.
+                    if let Some(prev_tx) = session.pending_response.take() {
+                        let _ = prev_tx.send(A2NOutput {
+                            status: OutputStatus::Cancelled,
+                            values: HashMap::new(),
+                        });
+                    }
                     session.pending_response = Some(response_tx);
                     session.waiting = false;
                     let title = self.input.title.clone().unwrap_or_else(|| "A2N Form".to_string());
