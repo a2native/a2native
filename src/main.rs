@@ -6,10 +6,9 @@ use std::io::{self, IsTerminal, Read};
 
 use clap::{Parser, Subcommand};
 
-const A2UI_VERSION: &str = "0.1";
 const SCHEMA: &str = include_str!("../schema/a2ui-v0.1.schema.json");
 
-/// a2n — A2UI Protocol native UI renderer for AI agents.
+/// a2n — native desktop UI renderer for AI agents.
 ///
 /// Reads a JSON form spec (from stdin or as an inline argument), renders a
 /// native window, and writes the user's response as JSON to stdout.
@@ -20,7 +19,7 @@ const SCHEMA: &str = include_str!("../schema/a2ui-v0.1.schema.json");
 #[command(
     name = "a2n",
     version,
-    about = "A2UI Protocol — collect user input via native UI forms for AI agents",
+    about = "Native desktop UI renderer for AI agents — collect user input via native OS forms",
     long_about = None,
     disable_help_subcommand = true,
 )]
@@ -51,14 +50,14 @@ struct Cli {
 enum Command {
     /// Show this help message.
     Help,
-    /// Print the A2UI input JSON Schema (v0.1) and exit.
+    /// Print the a2native input JSON Schema and exit.
     Schema,
 }
 
 fn print_help() {
     println!(
         "\
-a2n  —  A2UI Protocol v{A2UI_VERSION}  —  native UI renderer for AI agents
+a2n  —  native desktop UI renderer for AI agents
 
 WHAT IT DOES
   AI agents often need structured input from a user (choices, file paths,
@@ -85,8 +84,8 @@ SESSION MODE
   the form in the existing window.  Close with: a2n --close <UUID>
 
 SCHEMA
-  Run `a2n schema` to see the full JSON Schema for the input format.
-  Online: https://a2native.github.io/schema/a2ui-v{A2UI_VERSION}.schema.json
+  Run `a2n schema` to see the full JSON Schema for the a2native input format.
+  Online: https://a2native.github.io/schema/a2ui-v0.1.schema.json
 
 SECURITY
   Every window displays a permanent banner warning the user that the
