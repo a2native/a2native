@@ -41,6 +41,12 @@ A complex wizard that would take 10 rounds of chat can become a single form.
 a2native implements the **A2UI protocol** — a JSON-based contract between AI agents and native UI
 renderers.
 
+This release targets **A2UI v0.1**.  The machine-readable schema is available at:
+
+- [schema/a2ui-v0.1.schema.json](schema/a2ui-v0.1.schema.json) (in this repo)
+- `https://a2native.github.io/schema/a2ui-v0.1.schema.json` (hosted)
+- `a2n schema` — print it locally on any machine with a2n installed
+
 ### Input schema
 
 ```jsonc
@@ -131,16 +137,33 @@ Requires Rust ≥ 1.75.
 
 ## Usage
 
+### Quick reference
+
+```
+a2n [JSON]                   One-shot: inline JSON form spec
+echo '{...}' | a2n           One-shot: JSON form spec from stdin
+a2n schema                   Print the A2UI input JSON Schema
+a2n help                     Show usage guide
+a2n --help                   Show flag reference
+a2n --version                Show version
+```
+
 ### One-shot mode
 
+Provide JSON either inline as an argument or piped via stdin:
+
 ```bash
-echo '{"title":"Deploy","components":[
+# Inline argument
+a2n '{"title":"Deploy","components":[
   {"id":"env","type":"dropdown","label":"Environment",
    "options":[{"value":"prod","label":"Production"},
               {"value":"stag","label":"Staging"}]},
   {"id":"confirm","type":"checkbox","label":"I have reviewed the changes"},
   {"id":"go","type":"button","label":"Deploy","action":"submit"}
-]}' | a2n
+]}'
+
+# Or via stdin
+echo '{"title":"Deploy","components":[...]}' | a2n
 ```
 
 Output (after user interaction):
@@ -189,11 +212,17 @@ a2n --close <UUID>
 
 The window closes and the daemon exits cleanly.
 
-### Help
+### Help & Schema
 
 ```bash
-a2n --help
-a2n --version
+# Show usage guide (also shown when running a2n with no arguments)
+a2n help
+
+# Print the full A2UI input JSON Schema
+a2n schema
+
+a2n --help      # flag reference
+a2n --version   # version
 ```
 
 ---
