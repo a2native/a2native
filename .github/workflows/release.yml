@@ -1,0 +1,165 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write   # create GitHub releases
+  id-token: write   # npm provenance
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ── Build native binaries on each target platform ────────────────────────────
+  build:
+    name: Build (${{ matrix.platform }}-${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: win32
+            arch: x64
+            runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary: a2n.exe
+
+          - platform: darwin
+            arch: x64
+            runner: macos-latest   # ARM runner; cross-compiles to x86_64 via Apple clang
+            target: x86_64-apple-darwin
+            binary: a2n
+
+          - platform: darwin
+            arch: arm64
+            runner: macos-latest
+            target: aarch64-apple-darwin
+            binary: a2n
+
+          - platform: linux
+            arch: x64
+            runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            binary: a2n
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install Linux system libraries
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-3-dev \
+            libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libxkbcommon-dev libssl-dev \
+            libglib2.0-dev libatk1.0-dev libpango1.0-dev \
+            libgdk-pixbuf2.0-dev libcairo2-dev
+
+      - name: Cache Cargo registry + build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target/
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-${{ matrix.target }}-cargo-
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: a2native-${{ matrix.platform }}-${{ matrix.arch }}
+          path: target/${{ matrix.target }}/release/${{ matrix.binary }}
+          if-no-files-found: error
+
+  # ── Create GitHub release + publish to npm ────────────────────────────────────
+  publish:
+    name: Publish
+    needs: build
+    if: ${{ !cancelled() && needs.build.result != 'failure' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Prepare release assets
+        run: |
+          mkdir release-assets
+          cp artifacts/a2native-win32-x64/a2n.exe   release-assets/a2n-win32-x64.exe
+          [ -f artifacts/a2native-darwin-x64/a2n ] && cp artifacts/a2native-darwin-x64/a2n release-assets/a2n-darwin-x64 || true
+          cp artifacts/a2native-darwin-arm64/a2n     release-assets/a2n-darwin-arm64
+          cp artifacts/a2native-linux-x64/a2n        release-assets/a2n-linux-x64
+          chmod +x release-assets/a2n-darwin-* release-assets/a2n-linux-* 2>/dev/null || true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*
+          generate_release_notes: true
+
+      - name: Copy binaries into npm platform packages
+        run: |
+          install -Dm755 artifacts/a2native-win32-x64/a2n.exe  npm/a2native-win32-x64/bin/a2n.exe
+          [ -f artifacts/a2native-darwin-x64/a2n ] && install -Dm755 artifacts/a2native-darwin-x64/a2n npm/a2native-darwin-x64/bin/a2n || true
+          install -Dm755 artifacts/a2native-darwin-arm64/a2n   npm/a2native-darwin-arm64/bin/a2n
+          install -Dm755 artifacts/a2native-linux-x64/a2n      npm/a2native-linux-x64/bin/a2n
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Stamp version from tag into all package.json files
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Publishing version $VERSION"
+          for dir in npm/a2native/ npm/a2native-*/; do
+            node -e "
+              const fs = require('fs');
+              const file = '${dir}package.json';
+              const pkg = JSON.parse(fs.readFileSync(file, 'utf8'));
+              pkg.version = '$VERSION';
+              if (pkg.optionalDependencies) {
+                for (const k of Object.keys(pkg.optionalDependencies)) {
+                  pkg.optionalDependencies[k] = '$VERSION';
+                }
+              }
+              fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + '\n');
+            "
+          done
+
+      - name: Publish platform packages
+        if: ${{ secrets.NPM_TOKEN != '' }}
+        run: |
+          for dir in npm/a2native-*/; do
+            echo "→ Publishing $(basename $dir)…"
+            npm publish "$dir" --access public
+          done
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish main package (@a2native/a2native)
+        if: ${{ secrets.NPM_TOKEN != '' }}
+        run: npm publish npm/a2native/ --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Skip npm publish (NPM_TOKEN not set)
+        if: ${{ secrets.NPM_TOKEN == '' }}
+        run: echo "⚠️  NPM_TOKEN secret not configured — skipping npm publish. Set it in repo Settings → Secrets → Actions."

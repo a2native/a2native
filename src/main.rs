@@ -24,15 +24,15 @@ use clap::Parser;
 struct Cli {
     /// Session UUID — keeps the window alive for multi-turn interactions.
     /// On the first call a daemon is spawned; subsequent calls reuse it.
-    #[arg(long, value_name = "UUID")]
+    #[arg(long, value_name = "UUID", conflicts_with = "close")]
     session: Option<String>,
 
     /// Close a running session window and exit.
-    #[arg(long, value_name = "UUID")]
+    #[arg(long, value_name = "UUID", conflicts_with = "session")]
     close: Option<String>,
 
     /// [Internal] Run as session daemon — do not call directly.
-    #[arg(long, hide = true)]
+    #[arg(long, hide = true, requires = "session", conflicts_with = "close")]
     daemon: bool,
 }
 
@@ -73,7 +73,8 @@ fn main() {
             return;
         }
 
-        // No daemon running yet — spawn one and wait for it to be ready.
+        // No daemon running yet — clear any stale port file, then spawn.
+        session::remove_port(uuid);
         spawn_daemon(uuid);
         if !session::wait_for_daemon(uuid, 10) {
             eprintln!("error: timed out waiting for session daemon to start");

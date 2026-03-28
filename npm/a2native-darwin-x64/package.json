@@ -1,0 +1,10 @@
+{
+  "name": "@a2native/a2native-darwin-x64",
+  "version": "0.1.0",
+  "description": "macOS Intel (x64) binary for @a2native/a2native",
+  "repository": { "type": "git", "url": "https://github.com/a2native/a2native.git" },
+  "license": "Apache-2.0",
+  "os": ["darwin"],
+  "cpu": ["x64"],
+  "files": ["bin/"]
+}

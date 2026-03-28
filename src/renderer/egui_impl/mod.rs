@@ -178,7 +178,10 @@ impl Renderer for EguiRenderer {
         };
 
         let app = A2NApp::new(input, output_slot_clone);
-        let _ = eframe::run_native(&title, native_options, Box::new(move |_cc| Ok(Box::new(app))));
+        let _ = eframe::run_native(&title, native_options, Box::new(move |cc| {
+            setup_fonts_and_style(&cc.egui_ctx);
+            Ok(Box::new(app))
+        }));
 
         let result = output_slot.lock().unwrap().take().unwrap_or_else(|| A2NOutput {
             status: OutputStatus::Cancelled,
@@ -238,7 +241,10 @@ pub fn run_daemon(uuid: &str) {
     };
 
     let app = A2NApp::new_session(first_input, first_tx, ipc_rx, uuid.to_string());
-    let _ = eframe::run_native(&title, native_options, Box::new(move |_cc| Ok(Box::new(app))));
+    let _ = eframe::run_native(&title, native_options, Box::new(move |cc| {
+        setup_fonts_and_style(&cc.egui_ctx);
+        Ok(Box::new(app))
+    }));
 
     crate::session::remove_port(uuid);
 }
@@ -257,8 +263,9 @@ fn handle_ipc(stream: std::net::TcpStream, tx: std::sync::mpsc::Sender<IpcComman
                     tx.send(IpcCommand::Update { input, response_tx: resp_tx }).ok();
                     if let Ok(output) = resp_rx.recv() {
                         if let Ok(mut s) = stream_out {
-                            let resp = serde_json::to_string(&output).unwrap();
-                            let _ = writeln!(s, "{resp}");
+                            if let Ok(resp) = serde_json::to_string(&output) {
+                                let _ = writeln!(s, "{resp}");
+                            }
                         }
                     }
                 }
@@ -417,6 +424,13 @@ impl eframe::App for A2NApp {
                     self.state = FormState::from_input(&self.input);
                     self.has_submit_button = Self::check_has_submit(&self.input.components);
                     self.start_time = Instant::now();
+                    // Cancel any previous pending client so it doesn't block forever.
+                    if let Some(prev_tx) = session.pending_response.take() {
+                        let _ = prev_tx.send(A2NOutput {
+                            status: OutputStatus::Cancelled,
+                            values: HashMap::new(),
+                        });
+                    }
                     session.pending_response = Some(response_tx);
                     session.waiting = false;
                     let title = self.input.title.clone().unwrap_or_else(|| "A2N Form".to_string());
@@ -479,20 +493,28 @@ impl eframe::App for A2NApp {
         // ── Main form panel ───────────────────────────────────────────────────
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
-                if let Some(title) = &self.input.title.clone() {
-                    ui.heading(title);
-                    ui.add_space(8.0);
+                if let Some(title) = &self.input.title {
+                    ui.label(egui::RichText::new(title).size(20.0).strong());
+                    ui.add_space(12.0);
                 }
-                let components = self.input.components.clone();
-                for component in &components {
-                    components::render_component(ui, component, &mut self.state);
-                    ui.add_space(4.0);
+                // Split-borrow: `input.components` (immutable) and `state` (mutable)
+                // are separate struct fields, so no clone is needed.
+                let num_components = self.input.components.len();
+                for i in 0..num_components {
+                    components::render_component(ui, &self.input.components[i], &mut self.state);
+                    ui.add_space(6.0);
                 }
                 if !self.has_submit_button {
                     ui.add_space(8.0);
                     ui.separator();
-                    ui.add_space(4.0);
-                    if ui.button("Submit").clicked() {
+                    ui.add_space(8.0);
+                    if ui.add(
+                        egui::Button::new(
+                            egui::RichText::new("Submit").strong().color(egui::Color32::WHITE),
+                        )
+                        .fill(egui::Color32::from_rgb(52, 120, 246))
+                        .min_size(egui::vec2(90.0, 32.0)),
+                    ).clicked() {
                         self.state.result = Some(FormResult::Submitted);
                     }
                 }
@@ -503,6 +525,64 @@ impl eframe::App for A2NApp {
             ctx.request_repaint_after(Duration::from_millis(500));
         }
     }
+}
+
+// ── Font & style setup ────────────────────────────────────────────────────────
+
+/// Load a CJK-capable system font as fallback and apply sensible style defaults.
+/// Called once at window creation via eframe's `CreationContext`.
+fn setup_fonts_and_style(ctx: &egui::Context) {
+    // ── CJK fallback font ─────────────────────────────────────────────────────
+    // egui ships without CJK glyphs; load the first available system font so
+    // that Chinese / Japanese / Korean text in banners and form content renders.
+    let cjk_candidates: &[&str] = &[
+        r"C:\Windows\Fonts\msyh.ttc",                              // Windows: Microsoft YaHei
+        r"C:\Windows\Fonts\simsun.ttc",                            // Windows: SimSun
+        "/System/Library/Fonts/PingFang.ttc",                      // macOS
+        "/System/Library/Fonts/STHeiti Light.ttc",                 // macOS (older)
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",  // Linux: Noto
+        "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",          // Linux: WenQuanYi
+        "/usr/share/fonts/wqy-microhei/wqy-microhei.ttc",
+    ];
+
+    let mut fonts = egui::FontDefinitions::default();
+    for path in cjk_candidates {
+        if let Ok(bytes) = std::fs::read(path) {
+            fonts.font_data.insert(
+                "cjk".to_owned(),
+                egui::FontData::from_owned(bytes),
+            );
+            // Append after the default font so Latin glyphs still use Hackney/Ubuntu.
+            fonts
+                .families
+                .entry(egui::FontFamily::Proportional)
+                .or_default()
+                .push("cjk".to_owned());
+            break;
+        }
+    }
+    ctx.set_fonts(fonts);
+
+    // ── Style ─────────────────────────────────────────────────────────────────
+    let mut style = (*ctx.style()).clone();
+
+    // More breathing room between items and inside buttons.
+    style.spacing.item_spacing    = egui::vec2(8.0, 8.0);
+    style.spacing.button_padding  = egui::vec2(14.0, 7.0);
+    style.spacing.interact_size.y = 26.0; // taller inputs / buttons
+
+    // Rounded corners everywhere.
+    let r = egui::Rounding::same(6.0);
+    style.visuals.widgets.noninteractive.rounding = r;
+    style.visuals.widgets.inactive.rounding       = r;
+    style.visuals.widgets.hovered.rounding        = r;
+    style.visuals.widgets.active.rounding         = r;
+    style.visuals.widgets.open.rounding           = r;
+    style.visuals.window_rounding                 = egui::Rounding::same(10.0);
+    style.visuals.menu_rounding                   = egui::Rounding::same(8.0);
+
+    ctx.set_style(style);
 }
 
 // ── Locale-aware security banner ──────────────────────────────────────────────

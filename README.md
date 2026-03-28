@@ -261,7 +261,7 @@ This banner cannot be suppressed by the form spec.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Apache-2.0 — see [LICENSE](LICENSE).
 
 | | |
 |---|---|
