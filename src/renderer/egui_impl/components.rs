@@ -255,4 +255,3 @@ fn render_inline_markdown(ui: &mut egui::Ui, line: &str) {
     });
 }
 
-

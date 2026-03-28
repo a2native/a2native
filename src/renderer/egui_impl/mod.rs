@@ -331,3 +331,195 @@ pub fn parse_hex_color(hex: &str) -> Option<egui::Color32> {
         None
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocol::{A2NInput, Component, SelectOption};
+
+    fn make_input(components: Vec<Component>) -> A2NInput {
+        A2NInput {
+            title: None,
+            timeout: None,
+            theme: None,
+            components,
+        }
+    }
+
+    #[test]
+    fn test_parse_hex_color_6digit() {
+        let color = parse_hex_color("#FF5733").unwrap();
+        assert_eq!(color, egui::Color32::from_rgb(0xFF, 0x57, 0x33));
+    }
+
+    #[test]
+    fn test_parse_hex_color_without_hash() {
+        let color = parse_hex_color("00FF00").unwrap();
+        assert_eq!(color, egui::Color32::from_rgb(0x00, 0xFF, 0x00));
+    }
+
+    #[test]
+    fn test_parse_hex_color_8digit() {
+        let color = parse_hex_color("#FF573380").unwrap();
+        assert_eq!(color, egui::Color32::from_rgba_unmultiplied(0xFF, 0x57, 0x33, 0x80));
+    }
+
+    #[test]
+    fn test_parse_hex_color_invalid() {
+        assert!(parse_hex_color("ZZZZZZ").is_none());
+        assert!(parse_hex_color("123").is_none());
+        assert!(parse_hex_color("").is_none());
+    }
+
+    #[test]
+    fn test_form_state_init_text_defaults() {
+        let input = make_input(vec![
+            Component::TextField {
+                id: "name".to_string(),
+                label: None,
+                placeholder: None,
+                required: false,
+                default_value: Some("Alice".to_string()),
+            },
+        ]);
+        let state = FormState::from_input(&input);
+        assert_eq!(state.text_values.get("name").map(|s| s.as_str()), Some("Alice"));
+    }
+
+    #[test]
+    fn test_form_state_init_number_defaults() {
+        let input = make_input(vec![
+            Component::NumberInput {
+                id: "age".to_string(),
+                label: None,
+                min: None,
+                max: None,
+                step: None,
+                default_value: Some(25.0),
+            },
+        ]);
+        let state = FormState::from_input(&input);
+        assert_eq!(state.number_values.get("age"), Some(&25.0));
+    }
+
+    #[test]
+    fn test_form_state_init_checkbox() {
+        let input = make_input(vec![
+            Component::Checkbox {
+                id: "agree".to_string(),
+                label: None,
+                default_value: true,
+            },
+        ]);
+        let state = FormState::from_input(&input);
+        assert_eq!(state.bool_values.get("agree"), Some(&true));
+    }
+
+    #[test]
+    fn test_form_state_init_checkbox_group() {
+        let input = make_input(vec![
+            Component::CheckboxGroup {
+                id: "tags".to_string(),
+                label: None,
+                options: vec![
+                    SelectOption { value: "a".to_string(), label: "A".to_string() },
+                    SelectOption { value: "b".to_string(), label: "B".to_string() },
+                ],
+                default_values: vec!["a".to_string()],
+            },
+        ]);
+        let state = FormState::from_input(&input);
+        assert_eq!(state.checkbox_group_values.get("tags"), Some(&vec!["a".to_string()]));
+    }
+
+    #[test]
+    fn test_form_state_init_slider_uses_min_as_default() {
+        let input = make_input(vec![
+            Component::Slider {
+                id: "vol".to_string(),
+                label: None,
+                min: 10.0,
+                max: 50.0,
+                step: None,
+                default_value: None,
+            },
+        ]);
+        let state = FormState::from_input(&input);
+        assert_eq!(state.number_values.get("vol"), Some(&10.0));
+    }
+
+    #[test]
+    fn test_form_state_collect_output() {
+        let components = vec![
+            Component::TextField {
+                id: "name".to_string(),
+                label: None,
+                placeholder: None,
+                required: false,
+                default_value: None,
+            },
+            Component::Checkbox {
+                id: "ok".to_string(),
+                label: None,
+                default_value: false,
+            },
+            Component::NumberInput {
+                id: "count".to_string(),
+                label: None,
+                min: None,
+                max: None,
+                step: None,
+                default_value: Some(3.0),
+            },
+        ];
+        let input = make_input(components.clone());
+        let mut state = FormState::from_input(&input);
+        *state.text_values.get_mut("name").unwrap() = "Bob".to_string();
+        *state.bool_values.get_mut("ok").unwrap() = true;
+
+        let values = state.collect_output(&components);
+        assert_eq!(values.get("name"), Some(&serde_json::Value::String("Bob".to_string())));
+        assert_eq!(values.get("ok"), Some(&serde_json::Value::Bool(true)));
+        assert_eq!(values.get("count"), Some(&serde_json::json!(3.0)));
+    }
+
+    #[test]
+    fn test_check_has_submit_true() {
+        let components = vec![
+            Component::Button {
+                id: "s".to_string(),
+                label: "Submit".to_string(),
+                action: ButtonAction::Submit,
+            },
+        ];
+        let input = make_input(components);
+        let app_has_submit = A2NApp::check_has_submit(&input.components);
+        assert!(app_has_submit);
+    }
+
+    #[test]
+    fn test_check_has_submit_false() {
+        let components = vec![
+            Component::Text { id: "t".to_string(), content: "hello".to_string() },
+        ];
+        let input = make_input(components);
+        assert!(!A2NApp::check_has_submit(&input.components));
+    }
+
+    #[test]
+    fn test_check_has_submit_in_card() {
+        let components = vec![
+            Component::Card {
+                id: "c".to_string(),
+                title: None,
+                children: vec![Component::Button {
+                    id: "b".to_string(),
+                    label: "Go".to_string(),
+                    action: ButtonAction::Submit,
+                }],
+            },
+        ];
+        let input = make_input(components);
+        assert!(A2NApp::check_has_submit(&input.components));
+    }
+}
