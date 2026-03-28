@@ -28,7 +28,7 @@ jobs:
 
           - platform: darwin
             arch: x64
-            runner: macos-13
+            runner: macos-latest   # ARM runner; cross-compiles to x86_64 via Apple clang
             target: x86_64-apple-darwin
             binary: a2n
 
@@ -87,6 +87,7 @@ jobs:
   publish:
     name: Publish
     needs: build
+    if: ${{ !cancelled() && needs.build.result != 'failure' }}
     runs-on: ubuntu-latest
 
     steps:
@@ -101,10 +102,10 @@ jobs:
         run: |
           mkdir release-assets
           cp artifacts/a2native-win32-x64/a2n.exe   release-assets/a2n-win32-x64.exe
-          cp artifacts/a2native-darwin-x64/a2n       release-assets/a2n-darwin-x64
+          [ -f artifacts/a2native-darwin-x64/a2n ] && cp artifacts/a2native-darwin-x64/a2n release-assets/a2n-darwin-x64 || true
           cp artifacts/a2native-darwin-arm64/a2n     release-assets/a2n-darwin-arm64
           cp artifacts/a2native-linux-x64/a2n        release-assets/a2n-linux-x64
-          chmod +x release-assets/a2n-darwin-* release-assets/a2n-linux-*
+          chmod +x release-assets/a2n-darwin-* release-assets/a2n-linux-* 2>/dev/null || true
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -115,7 +116,7 @@ jobs:
       - name: Copy binaries into npm platform packages
         run: |
           install -Dm755 artifacts/a2native-win32-x64/a2n.exe  npm/a2native-win32-x64/bin/a2n.exe
-          install -Dm755 artifacts/a2native-darwin-x64/a2n     npm/a2native-darwin-x64/bin/a2n
+          [ -f artifacts/a2native-darwin-x64/a2n ] && install -Dm755 artifacts/a2native-darwin-x64/a2n npm/a2native-darwin-x64/bin/a2n || true
           install -Dm755 artifacts/a2native-darwin-arm64/a2n   npm/a2native-darwin-arm64/bin/a2n
           install -Dm755 artifacts/a2native-linux-x64/a2n      npm/a2native-linux-x64/bin/a2n
 
