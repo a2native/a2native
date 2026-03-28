@@ -145,6 +145,7 @@ jobs:
           done
 
       - name: Publish platform packages
+        if: ${{ secrets.NPM_TOKEN != '' }}
         run: |
           for dir in npm/a2native-*/; do
             echo "→ Publishing $(basename $dir)…"
@@ -154,6 +155,11 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish main package (@a2native/a2native)
+        if: ${{ secrets.NPM_TOKEN != '' }}
         run: npm publish npm/a2native/ --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Skip npm publish (NPM_TOKEN not set)
+        if: ${{ secrets.NPM_TOKEN == '' }}
+        run: echo "⚠️  NPM_TOKEN secret not configured — skipping npm publish. Set it in repo Settings → Secrets → Actions."
