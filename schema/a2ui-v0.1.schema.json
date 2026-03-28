@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://a2native.github.io/schema/a2ui-v0.1.schema.json",
-  "title": "A2UI Input (v0.1)",
-  "description": "Input format for the A2UI protocol — send this JSON to a2n to render a native UI form and collect user responses.",
+  "title": "a2native Input Format (v0.1)",
+  "description": "Input format for a2n — send this JSON to the a2native renderer to display a native UI form and collect user responses. This is a2native's own schema, conceptually inspired by the Google A2UI flat component model but adapted for synchronous stdin/stdout CLI use.",
   "type": "object",
   "required": ["components"],
   "additionalProperties": false,
