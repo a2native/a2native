@@ -1,6 +1,6 @@
 use eframe::egui;
 
-use crate::protocol::{ButtonAction, Component, SelectOption};
+use crate::protocol::{ButtonAction, Component};
 use crate::renderer::egui_impl::{FormResult, FormState};
 
 pub fn render_component(ui: &mut egui::Ui, component: &Component, state: &mut FormState) {
@@ -255,11 +255,4 @@ fn render_inline_markdown(ui: &mut egui::Ui, line: &str) {
     });
 }
 
-#[allow(dead_code)]
-fn select_option_label<'a>(options: &'a [SelectOption], value: &'a str) -> &'a str {
-    options
-        .iter()
-        .find(|o| o.value == value)
-        .map(|o| o.label.as_str())
-        .unwrap_or(value)
-}
+
