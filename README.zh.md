@@ -137,12 +137,14 @@ cargo build --release
 
 ```
 a2n [JSON]                   一次性模式：内联 JSON 表单规格
-echo '{...}' | a2n           一次性模式：通过 stdin 传入 JSON
+echo '{...}' | a2n           一次性模式：通过 stdin 管道传入 JSON
 a2n schema                   输出 A2UI 输入 JSON Schema
 a2n help                     显示使用说明
 a2n --help                   显示参数帮助
 a2n --version                显示版本
 ```
+
+> **输入优先级：** 内联 JSON 参数 → stdin 管道 → （两者均无时 → 显示帮助）
 
 ### 一次性模式
 
@@ -207,7 +209,7 @@ a2n --close <UUID>
 ### 帮助与 Schema
 
 ```bash
-# 显示使用说明（直接运行 a2n 不带参数时也会显示）
+# 显示使用说明（无 JSON 参数且无 stdin 管道时自动显示）
 a2n help
 
 # 输出完整的 A2UI 输入 JSON Schema
