@@ -194,6 +194,16 @@ fn default_slider_max() -> f64 {
     100.0
 }
 
+/// IPC message sent from client to a running session daemon.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "action", rename_all = "lowercase")]
+pub enum IpcMessage {
+    /// Replace the current form with a new one.
+    Update { input: A2NInput },
+    /// Close the session window.
+    Close,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
