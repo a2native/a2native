@@ -66,16 +66,18 @@ WHAT IT DOES
   this: the agent generates a JSON form spec, a2n renders a native window,
   the user fills in the fields, and the answers come back as JSON.
 
-  One JSON in  →  native window  →  one JSON out
+  Input priority: inline JSON arg  →  stdin pipe  →  (neither → this help)
 
 USAGE
   a2n [JSON]                     One-shot: inline JSON form spec
-  echo '{{...}}' | a2n           One-shot: JSON form spec from stdin
+  echo '{{...}}' | a2n           One-shot: JSON form spec via stdin pipe
   a2n [JSON] --session <UUID>    Session: keep window open across turns
   a2n --close <UUID>             Close a session window
   a2n schema                     Print the input JSON Schema
   a2n --help                     Show full flag reference
   a2n --version                  Show version
+
+  (Running a2n with no JSON and no stdin pipe shows this help.)
 
 SESSION MODE
   Use --session <UUID> to keep a window alive across multiple agent turns.

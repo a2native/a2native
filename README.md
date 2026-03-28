@@ -141,12 +141,14 @@ Requires Rust ≥ 1.75.
 
 ```
 a2n [JSON]                   One-shot: inline JSON form spec
-echo '{...}' | a2n           One-shot: JSON form spec from stdin
+echo '{...}' | a2n           One-shot: JSON form spec from stdin pipe
 a2n schema                   Print the A2UI input JSON Schema
 a2n help                     Show usage guide
 a2n --help                   Show flag reference
 a2n --version                Show version
 ```
+
+> **Input priority:** inline JSON arg → stdin pipe → (neither → show help)
 
 ### One-shot mode
 
@@ -215,7 +217,7 @@ The window closes and the daemon exits cleanly.
 ### Help & Schema
 
 ```bash
-# Show usage guide (also shown when running a2n with no arguments)
+# Show usage guide (shown when no JSON arg and no stdin pipe)
 a2n help
 
 # Print the full A2UI input JSON Schema
