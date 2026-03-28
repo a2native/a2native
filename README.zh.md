@@ -1,11 +1,42 @@
 # a2native
 
-**A2UI 协议**参考实现 —— 为 AI 代理提供原生 UI 表单，用于收集用户输入。
+AI 代理的**原生桌面 UI 渲染器** —— 通过 egui 表单收集结构化用户输入，无需对话循环。
 
-一个 JSON 进 → 原生窗口 → 一个 JSON 出。无需对话循环，无需 Web 服务器。
+一个 JSON 进 → 原生窗口 → 一个 JSON 出。无需对话循环，无需 Web 服务器，无需浏览器。
 
 > ⚠ **安全提示** —— a2native 渲染的每个窗口顶部均会显示安全警告横幅。
 > 部署前请阅读[安全注意事项](#安全注意事项)。
+
+---
+
+## 在智能体协议栈中的位置
+
+a2native 填补了智能体协议栈中的**原生桌面**层：
+
+| 层级 | 协议 | 用途 |
+|---|---|---|
+| 代理 ↔ 工具/数据 | [MCP](https://modelcontextprotocol.io) | 让代理访问工具、文件、API |
+| 代理 ↔ 代理 | [A2A](https://google.github.io/A2A/) | 代理之间的协调通信 |
+| 代理 ↔ Web UI | [AG-UI](https://github.com/ag-ui-protocol/ag-ui) | 代理与浏览器之间的实时流式集成 |
+| 代理 ↔ 生成式 UI | [**A2UI**](https://github.com/google/a2ui)（Google） | 面向 Web / Flutter 的声明式 JSON UI 规范 |
+| **代理 ↔ 原生桌面** | **a2native** | **通过原生 OS 窗口同步收集表单输入** |
+
+> **三个听起来相似但不同的东西：**
+>
+> | | [AG-UI](https://github.com/ag-ui-protocol/ag-ui) | [Google A2UI](https://github.com/google/a2ui) | **a2native** |
+> |---|---|---|---|
+> | 本质 | SSE 事件协议 | 声明式 JSON UI 规范 | CLI 渲染二进制 |
+> | 传输层 | SSE / WebSocket | AG-UI 或 A2A | **stdin / stdout** |
+> | 渲染环境 | 浏览器（Web） | Web + Flutter | **原生 OS 窗口（egui）** |
+> | 交互模型 | 实时流式 | 增量曲面更新 | 请求 → 表单 → 响应 |
+> | 部署依赖 | Node.js + SDK | 需要对应渲染器 | **单一二进制，零依赖** |
+> | 适用场景 | 嵌入 Web 应用的代理交互 | 跨平台生成式 UI | **CLI/脚本代理流水线** |
+>
+> 三者**互补**：AG-UI 和 Google A2UI 处理 Web/应用端，a2native 处理原生桌面端。
+> a2native 的输入格式在概念上受 A2UI（扁平组件列表、声明式）启发，
+> 但针对同步 CLI 使用进行了适配 —— **并非** [Google A2UI 规范](https://github.com/google/a2ui)的实现。
+
+a2native 是一个**人机协作（Human-in-the-loop，HITL）**工具 —— 它将控制权交给用户，通过**原生生成式 UI**（由代理在运行时生成组件的表单）收集结构化输入，再将控制权归还给代理。原本需要 10 轮对话的向导，可以变成一个简单的表单。
 
 ---
 
@@ -33,17 +64,17 @@ AI 代理经常需要从用户处收集结构化输入 —— 一个选择、一
 
 ---
 
-## A2UI 协议
+## 输入格式
 
-a2native 实现了 **A2UI 协议** —— AI 代理与原生 UI 渲染器之间基于 JSON 的契约。
+a2native 使用简洁的 JSON 输入格式 —— 带有可选标题、超时和主题的扁平组件列表。
+该格式在概念上受 [Google A2UI](https://github.com/google/a2ui) 扁平组件列表方式的启发，
+针对同步 CLI 使用进行了适配。
 
-当前版本对应 **A2UI v0.1**。机器可读的 Schema 可通过以下方式获取：
+机器可读的 Schema 可通过以下方式获取：
 
 - [schema/a2ui-v0.1.schema.json](schema/a2ui-v0.1.schema.json)（本仓库内）
-- `https://a2native.github.io/schema/a2ui-v0.1.schema.json`（在线托管）
+- [`https://a2native.github.io/schema/a2ui-v0.1.schema.json`](https://a2native.github.io/schema/a2ui-v0.1.schema.json)（在线托管）
 - `a2n schema` —— 在任意安装了 a2n 的机器上直接输出
-
-### 输入格式
 
 ```jsonc
 {
@@ -138,7 +169,7 @@ cargo build --release
 ```
 a2n [JSON]                   一次性模式：内联 JSON 表单规格
 echo '{...}' | a2n           一次性模式：通过 stdin 管道传入 JSON
-a2n schema                   输出 A2UI 输入 JSON Schema
+a2n schema                   输出 a2native 输入 JSON Schema
 a2n help                     显示使用说明
 a2n --help                   显示参数帮助
 a2n --version                显示版本
@@ -212,7 +243,7 @@ a2n --close <UUID>
 # 显示使用说明（无 JSON 参数且无 stdin 管道时自动显示）
 a2n help
 
-# 输出完整的 A2UI 输入 JSON Schema
+# 输出完整的 a2native 输入 JSON Schema
 a2n schema
 
 a2n --help      # 参数说明
@@ -285,7 +316,8 @@ Apache-2.0 —— 详见 [LICENSE](LICENSE)。
 
 | | |
 |---|---|
-| 协议 | A2UI |
+| 输入格式 | [a2native schema v0.1](schema/a2ui-v0.1.schema.json) |
+| 相关协议 | [Google A2UI](https://github.com/google/a2ui) · [AG-UI](https://github.com/ag-ui-protocol/ag-ui) |
 | 渲染器 | [egui](https://github.com/emilk/egui) 0.29 |
 | 文件选择器 | [rfd](https://github.com/PolyMeilex/rfd) 0.15 |
 | CLI | [clap](https://github.com/clap-rs/clap) 4 |
