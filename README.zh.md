@@ -66,15 +66,52 @@ AI 代理经常需要从用户处收集结构化输入 —— 一个选择、一
 
 ## 输入格式
 
-a2native 使用简洁的 JSON 输入格式 —— 带有可选标题、超时和主题的扁平组件列表。
-该格式在概念上受 [Google A2UI](https://github.com/google/a2ui) 扁平组件列表方式的启发，
-针对同步 CLI 使用进行了适配。
+a2native 支持**两种输入格式**：
+
+### 1. Google A2UI 格式（推荐）
+
+a2native 原生接受 [Google A2UI v0.8+](https://github.com/google/a2ui) JSONL 消息
+（`surfaceUpdate` / `beginRendering`），并输出符合 A2UI 规范的 `userAction` 格式。
+任何基于 Google A2UI SDK 构建的代理都可以直接驱动 a2native，无需适配。
+
+**输入**（JSONL，一条或多条消息）：
+
+```jsonc
+{"surfaceUpdate":{"surfaceId":"form1","components":[
+  {"id":"h","component":{"Text":{"text":{"literalString":"部署"},"usageHint":"h2"}}},
+  {"id":"env","component":{"MultipleChoice":{"options":[
+    {"label":{"literalString":"生产环境"},"value":"prod"},
+    {"label":{"literalString":"测试环境"},"value":"stag"}
+  ],"maxAllowedSelections":1,"variant":"dropdown"}}},
+  {"id":"btn-lbl","component":{"Text":{"text":{"literalString":"部署"}}}},
+  {"id":"btn","component":{"Button":{"child":"btn-lbl","action":{"name":"submit"}}}}
+]}}
+```
+
+**输出**（A2UI `userAction`）：
+
+```json
+{"userAction":{"name":"submit","surfaceId":"form1","sourceComponentId":"btn","timestamp":"2026-01-01T12:00:00Z","context":{"env":"prod"}}}
+```
+
+**支持的 A2UI 标准目录组件：** `Text`、`Image`、`Divider`、`Button`、`TextField`、
+`CheckBox`、`MultipleChoice`（根据 `maxAllowedSelections` 和 `variant` 映射为 Dropdown / RadioGroup / CheckboxGroup）、
+`Slider`、`DateTimeInput`、`Column` / `Row` / `List`（作为卡片分组）、`Card`。
+
+> **注意：** 数据模型路径绑定（`"path": "/..."`）不会被解析 —— a2native 是同步渲染器，没有服务端数据模型。
+> 请使用 `literalString` / `literalNumber` / `literalBoolean` 提供静态值。
+
+### 2. a2native 传统格式
+
+a2native 自有的简化格式 —— 当输入不包含 `surfaceUpdate` 或 `beginRendering` 时自动识别。
 
 机器可读的 Schema 可通过以下方式获取：
 
 - [schema/a2ui-v0.1.schema.json](schema/a2ui-v0.1.schema.json)（本仓库内）
 - [`https://a2native.github.io/schema/a2ui-v0.1.schema.json`](https://a2native.github.io/schema/a2ui-v0.1.schema.json)（在线托管）
 - `a2n schema` —— 在任意安装了 a2n 的机器上直接输出
+
+#### 传统输入格式
 
 ```jsonc
 {
@@ -88,7 +125,7 @@ a2native 使用简洁的 JSON 输入格式 —— 带有可选标题、超时和
 }
 ```
 
-### 输出格式
+#### 传统输出格式
 
 ```jsonc
 {
@@ -100,7 +137,7 @@ a2native 使用简洁的 JSON 输入格式 —— 带有可选标题、超时和
 }
 ```
 
-### 组件参考
+#### 传统组件参考
 
 #### 展示类
 

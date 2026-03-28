@@ -74,17 +74,56 @@ A complex wizard that would take 10 rounds of chat can become a single form.
 
 ## Input Format
 
-a2native uses a simple JSON input format — a flat list of typed components with an optional title,
-timeout, and theme.  This format is conceptually inspired by [Google A2UI](https://github.com/google/a2ui)'s
-flat component list approach, adapted for synchronous CLI use.
+a2native supports **two input formats**:
+
+### 1. Google A2UI format (recommended)
+
+a2native natively accepts [Google A2UI v0.8+](https://github.com/google/a2ui) JSONL messages
+(`surfaceUpdate` / `beginRendering`) and emits A2UI-compliant `userAction` output.
+This lets any agent or SDK built for Google A2UI drive a2native without adaptation.
+
+**Input** (JSONL, one or more messages):
+
+```jsonc
+{"surfaceUpdate":{"surfaceId":"form1","components":[
+  {"id":"h","component":{"Text":{"text":{"literalString":"Deploy"},"usageHint":"h2"}}},
+  {"id":"env","component":{"MultipleChoice":{"options":[
+    {"label":{"literalString":"Production"},"value":"prod"},
+    {"label":{"literalString":"Staging"},"value":"stag"}
+  ],"maxAllowedSelections":1,"variant":"dropdown"}}},
+  {"id":"btn-lbl","component":{"Text":{"text":{"literalString":"Deploy"}}}},
+  {"id":"btn","component":{"Button":{"child":"btn-lbl","action":{"name":"submit"}}}}
+]}}
+{"beginRendering":{"surfaceId":"form1","root":"form1"}}
+```
+
+**Output** (A2UI `userAction`):
+
+```json
+{"userAction":{"name":"submit","surfaceId":"form1","sourceComponentId":"btn","timestamp":"2026-01-01T12:00:00Z","context":{"env":"prod"}}}
+```
+
+**Supported A2UI standard catalog components:** `Text`, `Image`, `Divider`, `Button`,
+`TextField` (with `textFieldType: "multiline"` → Textarea), `CheckBox`, `MultipleChoice`
+(maps to Dropdown / RadioGroup / CheckboxGroup depending on `maxAllowedSelections` and `variant`),
+`Slider`, `DateTimeInput`, `Column` / `Row` / `List` (as card groups), `Card`.
+
+> **Note:** Data model path bindings (`"path": "/..."`) are not resolved — a2native is a
+> synchronous renderer with no server-side data model.  Use `literalString` / `literalNumber` /
+> `literalBoolean` for static values.
+
+### 2. a2native legacy format
+
+a2native's own simpler format — auto-detected when the input does not contain `surfaceUpdate`
+or `beginRendering`.
 
 The machine-readable schema is available at:
 
 - [schema/a2ui-v0.1.schema.json](schema/a2ui-v0.1.schema.json) (in this repo)
 - [`https://a2native.github.io/schema/a2ui-v0.1.schema.json`](https://a2native.github.io/schema/a2ui-v0.1.schema.json) (hosted)
-- `a2n schema` — print it locally on any machine with a2n installed
+- `a2n schema` — print it locally
 
-### Input schema
+#### Legacy input schema
 
 ```jsonc
 {
@@ -98,7 +137,7 @@ The machine-readable schema is available at:
 }
 ```
 
-### Output schema
+#### Legacy output schema
 
 ```jsonc
 {
@@ -110,7 +149,7 @@ The machine-readable schema is available at:
 }
 ```
 
-### Component reference
+#### Legacy component reference
 
 #### Display
 

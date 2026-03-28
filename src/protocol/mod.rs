@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+pub mod a2ui;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct A2NInput {
     #[serde(skip_serializing_if = "Option::is_none")]
