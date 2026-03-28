@@ -13,14 +13,43 @@ use crate::protocol::{A2NInput, A2NOutput, IpcMessage};
 
 // ── Port file helpers ─────────────────────────────────────────────────────────
 
+/// Sanitise the caller-supplied UUID so it is safe to embed in a filename.
+///
+/// Keeps only ASCII alphanumerics, hyphens, and underscores (all of which are
+/// path-safe on every supported OS).  This prevents path traversal while
+/// preserving a deterministic, readable mapping — unlike a hash, the output
+/// won't silently diverge across Rust versions or builds.
+fn safe_uuid_component(uuid: &str) -> String {
+    let s: String = uuid
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .take(64)
+        .collect();
+    if s.is_empty() { "default".to_string() } else { s }
+}
+
 fn port_file(uuid: &str) -> PathBuf {
     let mut p = std::env::temp_dir();
-    p.push(format!("a2n-session-{uuid}.port"));
+    p.push(format!("a2n-session-{}.port", safe_uuid_component(uuid)));
     p
 }
 
 pub fn write_port(uuid: &str, port: u16) {
-    let _ = std::fs::write(port_file(uuid), port.to_string());
+    use std::fs::OpenOptions;
+
+    let path = port_file(uuid);
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true); // fail if file already exists (no overwrite race)
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600); // owner-only read/write
+    }
+
+    if let Ok(mut file) = options.open(&path) {
+        let _ = write!(file, "{port}");
+    }
 }
 
 pub fn read_port(uuid: &str) -> Option<u16> {
@@ -42,7 +71,8 @@ pub fn try_send(uuid: &str, input: &A2NInput) -> Option<A2NOutput> {
     let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).ok()?;
     // 5-minute read timeout – the user may take a while to fill the form.
     let _ = stream.set_read_timeout(Some(Duration::from_secs(300)));
-    let msg = serde_json::to_string(&IpcMessage::Update { input: input.clone() }).unwrap();
+    // Avoid panicking on serialization failure — return None instead.
+    let msg = serde_json::to_string(&IpcMessage::Update { input: input.clone() }).ok()?;
     writeln!(stream, "{msg}").ok()?;
     let mut reader = BufReader::new(&stream);
     let mut line = String::new();
@@ -54,19 +84,28 @@ pub fn try_send(uuid: &str, input: &A2NInput) -> Option<A2NOutput> {
 pub fn send_close(uuid: &str) {
     if let Some(port) = read_port(uuid) {
         if let Ok(mut stream) = TcpStream::connect(format!("127.0.0.1:{port}")) {
-            let msg = serde_json::to_string(&IpcMessage::Close).unwrap();
-            let _ = writeln!(stream, "{msg}");
+            // Best-effort: skip if serialization somehow fails.
+            if let Ok(msg) = serde_json::to_string(&IpcMessage::Close) {
+                let _ = writeln!(stream, "{msg}");
+            }
         }
     }
     remove_port(uuid);
 }
 
-/// Poll until the daemon has written its port file, or the timeout elapses.
+/// Poll until the daemon writes its port file *and* accepts a TCP connection,
+/// or the timeout elapses.
+///
+/// The caller is responsible for removing any stale port file **before** spawning
+/// the daemon, so this function does not need to do it.
 pub fn wait_for_daemon(uuid: &str, timeout_secs: u64) -> bool {
     let deadline = Instant::now() + Duration::from_secs(timeout_secs);
     while Instant::now() < deadline {
-        if read_port(uuid).is_some() {
-            return true;
+        if let Some(port) = read_port(uuid) {
+            // Validate readiness with an actual TCP connection attempt.
+            if TcpStream::connect(format!("127.0.0.1:{port}")).is_ok() {
+                return true;
+            }
         }
         std::thread::sleep(Duration::from_millis(50));
     }
