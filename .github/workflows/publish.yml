@@ -139,7 +139,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
       - name: Stamp version from tag into all package.json files
@@ -163,10 +163,8 @@ jobs:
 
       - name: Publish to npm
         run: |
-          if [ -z "$NPM_TOKEN" ]; then
-            echo "NPM_TOKEN secret not configured - skipping npm publish."
-            exit 0
-          fi
+          # Trusted Publishers (OIDC) takes precedence over token automatically (npm 11.5.1+).
+          # If neither OIDC nor a valid token is available, fail with helpful message.
           NPM_FAILED=0
           for dir in npm/a2native-*/ npm/a2native/; do
             PKG=$(basename "$dir")
@@ -178,12 +176,16 @@ jobs:
             cat /tmp/npm-pub-$PKG.log
             if [ $CODE -ne 0 ]; then
               if grep -q "EOTP\|one-time password" /tmp/npm-pub-$PKG.log; then
-                echo "::warning::npm EOTP: NPM_TOKEN must be 'Automation' type. Go to https://www.npmjs.com/settings/~/tokens → Generate New Token → Automation, then update NPM_TOKEN secret."
-                echo "  -> Skipping npm publish (token type issue, not a secret permission issue)."
-              elif grep -q "previously published\|already exists\|403" /tmp/npm-pub-$PKG.log; then
+                echo "::warning::npm EOTP: NPM_TOKEN must be 'Automation' type, OR configure Trusted Publishers on npmjs.com (no token needed after first publish)."
+                echo "  -> See: https://docs.npmjs.com/trusted-publishers"
+              elif grep -q "previously published\|already exists\|cannot publish over" /tmp/npm-pub-$PKG.log; then
                 echo "  -> $PKG already published, skipping."
+              elif grep -q "404\|Not Found\|You must be logged in" /tmp/npm-pub-$PKG.log; then
+                echo "::warning::npm auth failed for $PKG: no valid token and Trusted Publishers not configured yet."
+                echo "  -> For initial publish: create an Automation token at https://www.npmjs.com/settings/~/tokens"
+                echo "  -> For subsequent publishes: configure Trusted Publishers at https://docs.npmjs.com/trusted-publishers"
               else
-                echo "::error::npm publish failed for $PKG with unexpected error (exit $CODE)"
+                echo "::error::npm publish failed for $PKG (exit $CODE)"
                 NPM_FAILED=1
               fi
             fi
