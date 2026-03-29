@@ -121,6 +121,18 @@ jobs:
           files: release-assets/*
           generate_release_notes: true
 
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Publish to crates.io
+        if: ${{ secrets.CARGO_REGISTRY_TOKEN != '' }}
+        run: cargo publish --no-verify
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Skip crates.io publish (token not set)
+        if: ${{ secrets.CARGO_REGISTRY_TOKEN == '' }}
+        run: echo "⚠️  CARGO_REGISTRY_TOKEN not configured — skipping crates.io publish."
+
       - name: Copy binaries into npm platform packages
         run: |
           install -Dm755 artifacts/a2native-win32-x64/a2n.exe  npm/a2native-win32-x64/bin/a2n.exe
