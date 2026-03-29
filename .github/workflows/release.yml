@@ -12,10 +12,20 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # ── Guard: always succeeds, so branch-push runs show green (not failure) ──────
+  guard:
+    name: Check trigger
+    runs-on: ubuntu-latest
+    outputs:
+      is_release: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    steps:
+      - run: echo "ref=${{ github.ref }} is_release=${{ startsWith(github.ref, 'refs/tags/v') }}"
+
   # ── Build native binaries on each target platform ────────────────────────────
   build:
     name: Build (${{ matrix.platform }}-${{ matrix.arch }})
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: guard
+    if: needs.guard.outputs.is_release == 'true'
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -87,8 +97,8 @@ jobs:
   # ── Create GitHub release + publish to npm ────────────────────────────────────
   publish:
     name: Publish
-    needs: build
-    if: ${{ startsWith(github.ref, 'refs/tags/v') && !cancelled() && needs.build.result != 'failure' }}
+    needs: [guard, build]
+    if: ${{ needs.guard.outputs.is_release == 'true' && !cancelled() && needs.build.result != 'failure' }}
     runs-on: ubuntu-latest
 
     steps:
