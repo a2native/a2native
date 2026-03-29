@@ -3,6 +3,7 @@ name: Release
 on:
   push:
     tags: ['v*.*.*']
+    branches-ignore: ['**']   # tags-only: prevent spurious runs on branch pushes
 
 permissions:
   contents: write   # create GitHub releases
