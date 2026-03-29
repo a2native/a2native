@@ -26,7 +26,7 @@ a2native fills the **native-desktop** slot in the agentic protocol landscape:
 > | | [AG-UI](https://github.com/ag-ui-protocol/ag-ui) | [Google A2UI](https://github.com/google/a2ui) | **a2native** |
 > |---|---|---|---|
 > | What | SSE event protocol | Declarative JSON UI spec | CLI renderer binary |
-> | Transport | SSE / WebSocket | AG-UI or A2A | **stdin / stdout** |
+> | Transport | SSE / WebSocket | AG-UI or A2A | **stdin/stdout · SSE · WebSocket** |
 > | Renders in | Browser (web) | Web + Flutter | **Native OS window (egui)** |
 > | Interaction | Real-time streaming | Incremental surface updates | Request → form → response |
 > | Deploy needs | Node.js + SDK | Client renderer required | **Single binary, zero deps** |
@@ -258,12 +258,16 @@ Requires Rust ≥ 1.75.
 ### Quick reference
 
 ```
-a2n [JSON]                   One-shot: inline JSON form spec
-echo '{...}' | a2n           One-shot: JSON form spec from stdin pipe
-a2n schema                   Print the A2UI input JSON Schema
-a2n help                     Show usage guide
-a2n --help                   Show flag reference
-a2n --version                Show version
+a2n [JSON]                           One-shot: inline JSON form spec
+echo '{...}' | a2n                   One-shot: JSON form spec from stdin pipe
+a2n schema                           Print the A2UI input JSON Schema
+a2n help                             Show usage guide
+a2n --help                           Show flag reference
+a2n --version                        Show version
+a2n [JSON] --session <UUID>          Session: keep window open across turns
+a2n --session <UUID> --sse <PORT>    Session + HTTP/SSE endpoint on PORT
+a2n --session <UUID> --ws  <PORT>    Session + WebSocket endpoint on PORT
+a2n --close <UUID>                   Close a session window
 ```
 
 > **Input priority:** inline JSON arg → stdin pipe → (neither → show help)
@@ -331,6 +335,87 @@ a2n --close <UUID>
 ```
 
 The window closes and the daemon exits cleanly.
+
+### HTTP/SSE & WebSocket — external agent API
+
+Add `--sse <PORT>` and/or `--ws <PORT>` to a session to expose HTTP or WebSocket
+endpoints.  This lets agents written in **any language** (Python, Node.js, etc.)
+connect to a2native directly — no CLI wrapper or subprocess needed.
+
+```bash
+# Start daemon with SSE on port 8080 (no initial form — daemon waits for connections)
+a2n --session my-session --sse 8080
+# → a2n: SSE  http://127.0.0.1:8080/form  (session: my-session)
+
+# Start daemon with WebSocket on port 8081
+a2n --session my-session --ws 8081
+
+# Both at once
+a2n --session my-session --sse 8080 --ws 8081
+
+# Close when done
+a2n --close my-session
+```
+
+**SSE protocol** — `POST http://127.0.0.1:<PORT>/form`
+
+```
+POST /form              body: JSON form spec (a2native / A2UI / AG-UI auto-detected)
+GET  /health            liveness probe → {"status":"ok"}
+```
+
+Response streams `text/event-stream`:
+
+```
+event: waiting
+data: {"status":"waiting"}
+
+event: result
+data: {"status":"submitted","values":{"field":"value",...}}
+```
+
+Python example:
+
+```python
+import requests, json
+
+resp = requests.post("http://127.0.0.1:8080/form",
+    json={"title": "Confirm deploy", "components": [
+        {"id": "env", "type": "dropdown", "label": "Environment",
+         "options": [{"value": "prod", "label": "Production"}]},
+        {"id": "ok", "type": "button", "label": "Deploy", "action": "submit"},
+    ]}, stream=True)
+
+for line in resp.iter_lines():
+    if line.startswith(b"data:"):
+        print(json.loads(line[5:]))   # {"status":"submitted","values":{"env":"prod"}}
+        break
+```
+
+**WebSocket protocol** — `ws://127.0.0.1:<PORT>`
+
+Send a JSON form spec as a text frame; receive `{"type":"waiting"}` then
+`{"type":"result","data":{...}}` when the user submits.  One connection handles
+multiple sequential forms.
+
+```python
+import websocket, json
+
+ws = websocket.create_connection("ws://127.0.0.1:8081")
+ws.send(json.dumps({"title": "Pick one", "components": [
+    {"id": "choice", "type": "radio-group", "label": "Option",
+     "options": [{"value": "a", "label": "A"}, {"value": "b", "label": "B"}]},
+    {"id": "ok", "type": "button", "label": "Select", "action": "submit"},
+]}))
+ws.recv()                       # {"type":"waiting","status":"waiting"}
+result = json.loads(ws.recv())  # {"type":"result","data":{"status":"submitted",...}}
+print(result["data"]["values"])
+```
+
+Both endpoints share the same serialized queue as the CLI session protocol; all
+three can be used together on the same UUID.
+
+### Close a session
 
 ### Help & Schema
 
@@ -414,7 +499,7 @@ Apache-2.0 — see [LICENSE](LICENSE).
 
 | | |
 |---|---|
-| Input format | [a2native schema v0.1](schema/a2ui-v0.1.schema.json) |
+| Input format | [a2native schema v0.1](schema/a2native-v0.1.schema.json) |
 | Related protocols | [Google A2UI](https://github.com/google/a2ui) · [AG-UI](https://github.com/ag-ui-protocol/ag-ui) |
 | Renderer | [egui](https://github.com/emilk/egui) 0.29 |
 | File picker | [rfd](https://github.com/PolyMeilex/rfd) 0.15 |

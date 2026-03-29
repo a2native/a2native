@@ -26,7 +26,7 @@ a2native 填补了智能体协议栈中的**原生桌面**层：
 > | | [AG-UI](https://github.com/ag-ui-protocol/ag-ui) | [Google A2UI](https://github.com/google/a2ui) | **a2native** |
 > |---|---|---|---|
 > | 本质 | SSE 事件协议 | 声明式 JSON UI 规范 | CLI 渲染二进制 |
-> | 传输层 | SSE / WebSocket | AG-UI 或 A2A | **stdin / stdout** |
+> | 传输层 | SSE / WebSocket | AG-UI 或 A2A | **stdin/stdout · SSE · WebSocket** |
 > | 渲染环境 | 浏览器（Web） | Web + Flutter | **原生 OS 窗口（egui）** |
 > | 交互模型 | 实时流式 | 增量曲面更新 | 请求 → 表单 → 响应 |
 > | 部署依赖 | Node.js + SDK | 需要对应渲染器 | **单一二进制，零依赖** |
@@ -244,12 +244,16 @@ cargo build --release
 ### 快速参考
 
 ```
-a2n [JSON]                   一次性模式：内联 JSON 表单规格
-echo '{...}' | a2n           一次性模式：通过 stdin 管道传入 JSON
-a2n schema                   输出 a2native 输入 JSON Schema
-a2n help                     显示使用说明
-a2n --help                   显示参数帮助
-a2n --version                显示版本
+a2n [JSON]                               一次性模式：内联 JSON 表单规格
+echo '{...}' | a2n                       一次性模式：通过 stdin 管道传入 JSON
+a2n schema                               输出 a2native 输入 JSON Schema
+a2n help                                 显示使用说明
+a2n --help                               显示参数帮助
+a2n --version                            显示版本
+a2n [JSON] --session <UUID>              会话模式：保持窗口跨轮次开启
+a2n --session <UUID> --sse <PORT>        会话 + HTTP/SSE 端点
+a2n --session <UUID> --ws  <PORT>        会话 + WebSocket 端点
+a2n --close <UUID>                       关闭会话窗口
 ```
 
 > **输入优先级：** 内联 JSON 参数 → stdin 管道 → （两者均无时 → 显示帮助）
@@ -313,6 +317,70 @@ a2n --close <UUID>
 ```
 
 窗口关闭，守护进程干净退出。
+
+### HTTP/SSE 与 WebSocket —— 外部代理 API
+
+为会话添加 `--sse <PORT>` 和/或 `--ws <PORT>`，即可暴露 HTTP 或 WebSocket 端点。
+用 Python、Node.js 等任意语言编写的代理都可以**直接连接** a2native，无需通过 CLI 包装或子进程。
+
+```bash
+# 启动带 SSE 的守护进程（无初始表单，等待外部连接）
+a2n --session my-session --sse 8080
+# → a2n: SSE  http://127.0.0.1:8080/form  (session: my-session)
+
+# 启动带 WebSocket 的守护进程
+a2n --session my-session --ws 8081
+
+# 同时启用两者
+a2n --session my-session --sse 8080 --ws 8081
+
+# 完成后关闭
+a2n --close my-session
+```
+
+**SSE 协议** — `POST http://127.0.0.1:<PORT>/form`
+
+```
+POST /form    请求体：JSON 表单规格（a2native / A2UI / AG-UI 自动识别）
+GET  /health  存活探测 → {"status":"ok"}
+```
+
+响应以 `text/event-stream` 流式返回：
+
+```
+event: waiting
+data: {"status":"waiting"}
+
+event: result
+data: {"status":"submitted","values":{"字段id":"值",...}}
+```
+
+Python 示例：
+
+```python
+import requests, json
+
+resp = requests.post("http://127.0.0.1:8080/form",
+    json={"title": "确认部署", "components": [
+        {"id": "env", "type": "dropdown", "label": "环境",
+         "options": [{"value": "prod", "label": "生产环境"}]},
+        {"id": "ok", "type": "button", "label": "部署", "action": "submit"},
+    ]}, stream=True)
+
+for line in resp.iter_lines():
+    if line.startswith(b"data:"):
+        print(json.loads(line[5:]))  # {"status":"submitted","values":{"env":"prod"}}
+        break
+```
+
+**WebSocket 协议** — `ws://127.0.0.1:<PORT>`
+
+以文本帧发送 JSON 表单规格；收到 `{"type":"waiting"}` 后等待用户提交，
+最终收到 `{"type":"result","data":{...}}`。单个连接支持多轮连续表单。
+
+三种方式（CLI 会话、SSE、WebSocket）共享同一个串行队列，可以同时使用。
+
+### 关闭会话
 
 ### 帮助与 Schema
 
@@ -393,7 +461,7 @@ Apache-2.0 —— 详见 [LICENSE](LICENSE)。
 
 | | |
 |---|---|
-| 输入格式 | [a2native schema v0.1](schema/a2ui-v0.1.schema.json) |
+| 输入格式 | [a2native schema v0.1](schema/a2native-v0.1.schema.json) |
 | 相关协议 | [Google A2UI](https://github.com/google/a2ui) · [AG-UI](https://github.com/ag-ui-protocol/ag-ui) |
 | 渲染器 | [egui](https://github.com/emilk/egui) 0.29 |
 | 文件选择器 | [rfd](https://github.com/PolyMeilex/rfd) 0.15 |
