@@ -130,18 +130,6 @@ jobs:
           files: release-assets/*
           generate_release_notes: true
 
-      - uses: dtolnay/rust-toolchain@stable
-
-      - name: Publish to crates.io
-        if: env.CARGO_TOKEN != ''
-        run: cargo publish --no-verify
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-
-      - name: Skip crates.io publish (token not set)
-        if: env.CARGO_TOKEN == ''
-        run: echo "CARGO_REGISTRY_TOKEN not configured - skipping crates.io publish."
-
       - name: Copy binaries into npm platform packages
         run: |
           install -Dm755 artifacts/a2native-win32-x64/a2n.exe  npm/a2native-win32-x64/bin/a2n.exe
@@ -192,3 +180,22 @@ jobs:
       - name: Skip npm publish (ORG_TOKEN not set)
         if: env.NPM_TOKEN == ''
         run: echo "ORG_TOKEN secret not configured - skipping npm publish."
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Publish to crates.io
+        if: env.CARGO_TOKEN != ''
+        run: |
+          OUT=$(cargo publish --no-verify 2>&1); CODE=$?
+          echo "$OUT"
+          if [ $CODE -ne 0 ] && echo "$OUT" | grep -q "already exists"; then
+            echo "Version already on crates.io - skipping."
+          elif [ $CODE -ne 0 ]; then
+            exit $CODE
+          fi
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Skip crates.io publish (token not set)
+        if: env.CARGO_TOKEN == ''
+        run: echo "CARGO_REGISTRY_TOKEN not configured - skipping crates.io publish."
