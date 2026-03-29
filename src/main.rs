@@ -6,7 +6,7 @@ use std::io::{self, IsTerminal, Read};
 
 use clap::{Parser, Subcommand};
 
-const SCHEMA: &str = include_str!("../schema/a2ui-v0.1.schema.json");
+const SCHEMA: &str = include_str!("../schema/a2native-v0.1.schema.json");
 
 /// a2n — native desktop UI renderer for AI agents.
 ///
@@ -85,7 +85,7 @@ SESSION MODE
 
 SCHEMA
   Run `a2n schema` to see the full JSON Schema for the a2native input format.
-  Online: https://a2native.github.io/schema/a2ui-v0.1.schema.json
+  Online: https://a2native.github.io/schema/a2native-v0.1.schema.json
 
   a2n auto-detects the input format (priority order):
     1. AG-UI  — TOOL_CALL_START/ARGS/END event stream  → TOOL_CALL_RESULT output

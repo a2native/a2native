@@ -72,38 +72,93 @@ a2native 支持**三种输入格式**，按优先级自动检测：
 |---|---|---|---|
 | 1 | **AG-UI**（信封） | 包含 `"TOOL_CALL_START"` | `TOOL_CALL_RESULT` 事件 |
 | 2 | **Google A2UI**（内层） | 包含 `surfaceUpdate` / `beginRendering` | `userAction` 事件 |
-| 3 | **a2native 传统格式** | 其他 JSON | `{"status", "values"}` |
+| 3 | **a2native**（原生） | 其他 JSON | `{"status", "values"}` |
 
 > AG-UI 与 Google A2UI 可以组合使用：代理发送 AG-UI 事件流，工具调用参数为 Google A2UI `surfaceUpdate` JSONL。
 
-### 1. AG-UI 格式（推荐用于 AG-UI 代理）
+### 1. a2native 格式（最简单——推荐新集成使用）
 
-a2native 作为 **AG-UI 前端工具处理器**：代理发送
-`TOOL_CALL_START` → `TOOL_CALL_ARGS`（流式传输表单规范）→ `TOOL_CALL_END` 事件，
-a2native 渲染表单后输出 `TOOL_CALL_RESULT` 事件。
+a2native 自有格式：输入一个 JSON 对象，输出一个 JSON 对象。
 
-规范：[github.com/ag-ui-protocol/ag-ui](https://github.com/ag-ui-protocol/ag-ui)
+机器可读的 Schema 可通过以下方式获取：
 
-**输入**（AG-UI JSONL）：
+- [schema/a2native-v0.1.schema.json](schema/a2native-v0.1.schema.json)（本仓库内）
+- [`https://a2native.github.io/schema/a2native-v0.1.schema.json`](https://a2native.github.io/schema/a2native-v0.1.schema.json)（在线托管）
+- `a2n schema` —— 在任意安装了 a2n 的机器上直接输出
+
+**输入：**
 
 ```jsonc
-{"type":"RUN_STARTED","threadId":"thread-1","runId":"run-1"}
-{"type":"TOOL_CALL_START","toolCallId":"tc1","toolCallName":"show_form"}
-{"type":"TOOL_CALL_ARGS","toolCallId":"tc1","delta":"{\"title\":\"部署到生产环境\",\"components\":["}
-{"type":"TOOL_CALL_ARGS","toolCallId":"tc1","delta":"  {\"id\":\"env\",\"type\":\"dropdown\",\"label\":\"环境\",\"options\":[{\"value\":\"prod\",\"label\":\"生产环境\"}]},"}
-{"type":"TOOL_CALL_ARGS","toolCallId":"tc1","delta":"  {\"id\":\"ok\",\"type\":\"button\",\"label\":\"部署\",\"action\":\"submit\"}]}"}
-{"type":"TOOL_CALL_END","toolCallId":"tc1"}
+{
+  "title":   "我的表单",         // 可选，窗口标题
+  "timeout": 60,                 // 可选，N 秒后自动关闭
+  "theme": {                     // 可选
+    "dark_mode": true,
+    "accent_color": "#6C63FF"
+  },
+  "components": [ /* ... */ ]    // 必填
+}
 ```
 
-工具调用参数（所有 `TOOL_CALL_ARGS` 的 delta 拼接）可以是 a2native 传统格式或 Google A2UI 格式，均自动检测。
+**输出：**
 
-**输出**（AG-UI `TOOL_CALL_RESULT`）：
-
-```json
-{"type":"TOOL_CALL_RESULT","messageId":"tc1-result","toolCallId":"tc1","content":"{\"status\":\"submitted\",\"values\":{\"env\":\"prod\"}}","role":"tool"}
+```jsonc
+{
+  "status": "submitted" | "cancelled" | "timeout",
+  "values": {
+    "字段id": "用户输入值",    // 字符串、数字、布尔值或数组
+    // ...
+  }
+}
 ```
 
-### 2. Google A2UI 格式（推荐用于 A2UI 代理）
+**组件参考：**
+
+#### 展示类
+
+| type | 必填字段 | 说明 |
+|---|---|---|
+| `text` | `id`, `content` | 纯文本标签 |
+| `markdown` | `id`, `content` | 支持标题（`#`/`##`/`###`）和 `**粗体**` |
+| `code` | `id`, `content` | 只读代码块；`language` 可选语言提示 |
+| `image` | `id`, `src` | 图片（文件路径或 URL），`alt` 可选 |
+| `divider` | `id` | 水平分隔线 |
+
+#### 输入类
+
+| type | 关键字段 | 输出值类型 |
+|---|---|---|
+| `text-field` | `label`, `placeholder`, `required`, `default_value` | `string` |
+| `textarea` | `label`, `placeholder`, `required`, `default_value` | `string` |
+| `password` | `label`, `placeholder`, `required` | `string` |
+| `number-input` | `label`, `min`, `max`, `step`, `default_value` | `number` |
+| `date-picker` | `label`, `required`, `default_value`（YYYY-MM-DD）| `string` |
+| `time-picker` | `label`, `required`, `default_value`（HH:MM）| `string` |
+| `dropdown` | `label`, `options`, `required`, `default_value` | `string` |
+| `checkbox` | `label`, `default_value` | `boolean` |
+| `toggle` | `label`, `default_value` | `boolean` |
+| `checkbox-group` | `label`, `options`, `default_values` | `string[]` |
+| `radio-group` | `label`, `options`, `required`, `default_value` | `string` |
+| `slider` | `label`, `min`（0）, `max`（100）, `step`, `default_value` | `number` |
+| `rating` | `label`, `max`（5）, `default_value` | `number`（1–max，未评为 0） |
+| `file-upload` | `label`, `accept`, `multiple` | `string`（路径，多选时用 `;` 分隔）|
+
+`options` / `default_values` 使用 `{ "value": "...", "label": "..." }` 对象。
+
+#### 操作类
+
+| type | 关键字段 | 说明 |
+|---|---|---|
+| `button` | `label`, `action` | `action`：`"submit"`（默认）、`"cancel"`、`"custom"` |
+
+#### 布局类
+
+| type | 关键字段 | 说明 |
+|---|---|---|
+| `card` | `title`, `children` | 带边框的垂直分组容器 |
+| `row` | `children` | 水平并排列（等宽列） |
+
+### 2. Google A2UI 格式（用于 A2UI 代理）
 
 a2native 原生接受 [Google A2UI v0.8+](https://github.com/google/a2ui) JSONL 消息
 （`surfaceUpdate` / `beginRendering`），并输出符合 A2UI 规范的 `userAction` 格式。
@@ -131,87 +186,37 @@ a2native 原生接受 [Google A2UI v0.8+](https://github.com/google/a2ui) JSONL 
 
 **支持的 A2UI 标准目录组件：** `Text`、`Image`、`Divider`、`Button`、`TextField`、
 `CheckBox`、`MultipleChoice`（根据 `maxAllowedSelections` 和 `variant` 映射为 Dropdown / RadioGroup / CheckboxGroup）、
-`Slider`、`DateTimeInput`、`Column` / `Row` / `List`（作为卡片分组）、`Card`。
+`Slider`、`DateTimeInput`、`Column` / `List`（作为卡片分组）、`Row`（水平布局）、`Card`。
 
 > **注意：** 数据模型路径绑定（`"path": "/..."`）不会被解析 —— a2native 是同步渲染器，没有服务端数据模型。
 > 请使用 `literalString` / `literalNumber` / `literalBoolean` 提供静态值。
 
-### 3. a2native 传统格式
+### 3. AG-UI 格式（用于 AG-UI 代理）
 
-a2native 自有的简化格式 —— 当输入不包含 `surfaceUpdate` 或 `beginRendering` 时自动识别。
+a2native 作为 **AG-UI 前端工具处理器**：代理发送
+`TOOL_CALL_START` → `TOOL_CALL_ARGS`（流式传输表单规范）→ `TOOL_CALL_END` 事件，
+a2native 渲染表单后输出 `TOOL_CALL_RESULT` 事件。
 
-机器可读的 Schema 可通过以下方式获取：
+规范：[github.com/ag-ui-protocol/ag-ui](https://github.com/ag-ui-protocol/ag-ui)
 
-- [schema/a2ui-v0.1.schema.json](schema/a2ui-v0.1.schema.json)（本仓库内）
-- [`https://a2native.github.io/schema/a2ui-v0.1.schema.json`](https://a2native.github.io/schema/a2ui-v0.1.schema.json)（在线托管）
-- `a2n schema` —— 在任意安装了 a2n 的机器上直接输出
-
-#### 传统输入格式
+**输入**（AG-UI JSONL）：
 
 ```jsonc
-{
-  "title":   "我的表单",         // 可选，窗口标题
-  "timeout": 60,                 // 可选，N 秒后自动关闭
-  "theme": {                     // 可选
-    "dark_mode": true,
-    "accent_color": "#6C63FF"
-  },
-  "components": [ /* ... */ ]    // 必填
-}
+{"type":"RUN_STARTED","threadId":"thread-1","runId":"run-1"}
+{"type":"TOOL_CALL_START","toolCallId":"tc1","toolCallName":"show_form"}
+{"type":"TOOL_CALL_ARGS","toolCallId":"tc1","delta":"{\"title\":\"部署到生产环境\",\"components\":["}
+{"type":"TOOL_CALL_ARGS","toolCallId":"tc1","delta":"  {\"id\":\"env\",\"type\":\"dropdown\",\"label\":\"环境\",\"options\":[{\"value\":\"prod\",\"label\":\"生产环境\"}]},"}
+{"type":"TOOL_CALL_ARGS","toolCallId":"tc1","delta":"  {\"id\":\"ok\",\"type\":\"button\",\"label\":\"部署\",\"action\":\"submit\"}]}"}
+{"type":"TOOL_CALL_END","toolCallId":"tc1"}
 ```
 
-#### 传统输出格式
+工具调用参数（所有 `TOOL_CALL_ARGS` 的 delta 拼接）可以是 a2native 格式或 Google A2UI 格式，均自动检测。
 
-```jsonc
-{
-  "status": "submitted" | "cancelled" | "timeout",
-  "values": {
-    "字段id": "用户输入值",    // 字符串、数字、布尔值或数组
-    // ...
-  }
-}
+**输出**（AG-UI `TOOL_CALL_RESULT`）：
+
+```json
+{"type":"TOOL_CALL_RESULT","messageId":"tc1-result","toolCallId":"tc1","content":"{\"status\":\"submitted\",\"values\":{\"env\":\"prod\"}}","role":"tool"}
 ```
-
-#### 传统组件参考
-
-#### 展示类
-
-| type | 必填字段 | 说明 |
-|---|---|---|
-| `text` | `id`, `content` | 纯文本标签 |
-| `markdown` | `id`, `content` | 支持标题（`#`/`##`/`###`）和 `**粗体**` |
-| `image` | `id`, `src` | 图片（文件路径或 URL），`alt` 可选 |
-| `divider` | `id` | 水平分隔线 |
-
-#### 输入类
-
-| type | 关键字段 | 输出值类型 |
-|---|---|---|
-| `text-field` | `label`, `placeholder`, `required`, `default_value` | `string` |
-| `textarea` | `label`, `placeholder`, `required`, `default_value` | `string` |
-| `number-input` | `label`, `min`, `max`, `step`, `default_value` | `number` |
-| `date-picker` | `label`, `required`, `default_value`（YYYY-MM-DD）| `string` |
-| `time-picker` | `label`, `required`, `default_value`（HH:MM）| `string` |
-| `dropdown` | `label`, `options`, `required`, `default_value` | `string` |
-| `checkbox` | `label`, `default_value` | `boolean` |
-| `checkbox-group` | `label`, `options`, `default_values` | `string[]` |
-| `radio-group` | `label`, `options`, `required`, `default_value` | `string` |
-| `slider` | `label`, `min`（0）, `max`（100）, `step`, `default_value` | `number` |
-| `file-upload` | `label`, `accept`, `multiple` | `string`（路径，多选时用 `;` 分隔）|
-
-`options` / `default_values` 使用 `{ "value": "...", "label": "..." }` 对象。
-
-#### 操作类
-
-| type | 关键字段 | 说明 |
-|---|---|---|
-| `button` | `label`, `action` | `action`：`"submit"`（默认）、`"cancel"`、`"custom"` |
-
-#### 布局类
-
-| type | 关键字段 | 说明 |
-|---|---|---|
-| `card` | `title`, `children` | 带边框的分组容器，children 可嵌套任意组件 |
 
 ---
 

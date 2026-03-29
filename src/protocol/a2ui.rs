@@ -357,7 +357,7 @@ fn convert(id: &str, comp_map: &HashMap<String, (String, Value)>) -> Option<Comp
         }
 
         // ── Layout ───────────────────────────────────────────────────────────
-        "Column" | "Row" | "List" => {
+        "Column" | "List" => {
             let child_ids: Vec<String> = props["children"]["explicitList"]
                 .as_array()
                 .map(|arr| {
@@ -370,6 +370,22 @@ fn convert(id: &str, comp_map: &HashMap<String, (String, Value)>) -> Option<Comp
                 None
             } else {
                 Some(Component::Card { id: id.into(), title: None, children })
+            }
+        }
+
+        "Row" => {
+            let child_ids: Vec<String> = props["children"]["explicitList"]
+                .as_array()
+                .map(|arr| {
+                    arr.iter().filter_map(|v| v.as_str().map(String::from)).collect()
+                })
+                .unwrap_or_default();
+            let children: Vec<Component> =
+                child_ids.iter().filter_map(|cid| convert(cid, comp_map)).collect();
+            if children.is_empty() {
+                None
+            } else {
+                Some(Component::Row { id: id.into(), children })
             }
         }
 

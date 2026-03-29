@@ -84,7 +84,16 @@ impl FormState {
                 Component::FileUpload { id, .. } => {
                     state.text_values.insert(id.clone(), String::new());
                 }
-                Component::Card { children, .. } => {
+                Component::Password { id, .. } => {
+                    state.text_values.insert(id.clone(), String::new());
+                }
+                Component::Rating { id, default_value, .. } => {
+                    state.number_values.insert(id.clone(), default_value.unwrap_or(0) as f64);
+                }
+                Component::Toggle { id, default_value, .. } => {
+                    state.bool_values.insert(id.clone(), *default_value);
+                }
+                Component::Card { children, .. } | Component::Row { children, .. } => {
                     Self::init_from_components(state, children);
                 }
                 _ => {}
@@ -111,12 +120,15 @@ impl FormState {
                 | Component::TimePicker { id, .. }
                 | Component::Dropdown { id, .. }
                 | Component::RadioGroup { id, .. }
-                | Component::FileUpload { id, .. } => {
+                | Component::FileUpload { id, .. }
+                | Component::Password { id, .. } => {
                     if let Some(v) = self.text_values.get(id) {
                         values.insert(id.clone(), serde_json::Value::String(v.clone()));
                     }
                 }
-                Component::NumberInput { id, .. } | Component::Slider { id, .. } => {
+                Component::NumberInput { id, .. }
+                | Component::Slider { id, .. }
+                | Component::Rating { id, .. } => {
                     if let Some(v) = self.number_values.get(id) {
                         values.insert(
                             id.clone(),
@@ -127,7 +139,7 @@ impl FormState {
                         );
                     }
                 }
-                Component::Checkbox { id, .. } => {
+                Component::Checkbox { id, .. } | Component::Toggle { id, .. } => {
                     if let Some(v) = self.bool_values.get(id) {
                         values.insert(id.clone(), serde_json::Value::Bool(*v));
                     }
@@ -142,7 +154,7 @@ impl FormState {
                         );
                     }
                 }
-                Component::Card { children, .. } => {
+                Component::Card { children, .. } | Component::Row { children, .. } => {
                     self.collect_from_components(values, children);
                 }
                 _ => {}
@@ -341,7 +353,7 @@ impl A2NApp {
         for c in components {
             match c {
                 Component::Button { action, .. } if *action == ButtonAction::Submit => return true,
-                Component::Card { children, .. } => {
+                Component::Card { children, .. } | Component::Row { children, .. } => {
                     if Self::check_has_submit(children) { return true; }
                 }
                 _ => {}

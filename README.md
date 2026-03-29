@@ -82,40 +82,93 @@ a2native supports **three input formats**, auto-detected in priority order:
 |---|---|---|---|
 | 1 | **AG-UI** (envelope) | contains `"TOOL_CALL_START"` | `TOOL_CALL_RESULT` event |
 | 2 | **Google A2UI** (inner) | contains `surfaceUpdate` / `beginRendering` | `userAction` event |
-| 3 | **a2native legacy** | any other JSON | `{"status", "values"}` |
+| 3 | **a2native** (native) | any other JSON | `{"status", "values"}` |
 
 > AG-UI and Google A2UI can be combined: an agent streams an AG-UI event stream
 > whose tool call args are a Google A2UI `surfaceUpdate` JSONL form spec.
 
-### 1. AG-UI format (recommended for AG-UI agents)
+### 1. a2native format (simplest — use for new integrations)
 
-a2native works as an **AG-UI frontend tool handler**: the agent emits
-`TOOL_CALL_START` → `TOOL_CALL_ARGS` (streaming form spec) → `TOOL_CALL_END` events,
-a2native renders the form, and emits a `TOOL_CALL_RESULT` event.
+a2native's own format: one flat JSON object in, one JSON object out.
 
-Spec: [github.com/ag-ui-protocol/ag-ui](https://github.com/ag-ui-protocol/ag-ui)
+The machine-readable schema:
+- [schema/a2native-v0.1.schema.json](schema/a2native-v0.1.schema.json) (in this repo)
+- [`https://a2native.github.io/schema/a2native-v0.1.schema.json`](https://a2native.github.io/schema/a2native-v0.1.schema.json) (hosted)
+- `a2n schema` — print it locally
 
-**Input** (AG-UI JSONL):
+**Input:**
 
 ```jsonc
-{"type":"RUN_STARTED","threadId":"thread-1","runId":"run-1"}
-{"type":"TOOL_CALL_START","toolCallId":"tc1","toolCallName":"show_form"}
-{"type":"TOOL_CALL_ARGS","toolCallId":"tc1","delta":"{\"title\":\"Deploy to production\",\"components\":["}
-{"type":"TOOL_CALL_ARGS","toolCallId":"tc1","delta":"  {\"id\":\"env\",\"type\":\"dropdown\",\"label\":\"Environment\",\"options\":[{\"value\":\"prod\",\"label\":\"Production\"}]},"}
-{"type":"TOOL_CALL_ARGS","toolCallId":"tc1","delta":"  {\"id\":\"ok\",\"type\":\"button\",\"label\":\"Deploy\",\"action\":\"submit\"}]}"}
-{"type":"TOOL_CALL_END","toolCallId":"tc1"}
+{
+  "title":   "My Form",          // optional window title
+  "timeout": 60,                 // optional auto-close after N seconds
+  "theme": {                     // optional
+    "dark_mode": true,
+    "accent_color": "#6C63FF"
+  },
+  "components": [ /* ... */ ]    // required
+}
 ```
 
-The tool call args (assembled from all `TOOL_CALL_ARGS` deltas) can be in **either**
-a2native legacy format or Google A2UI format — both are auto-detected.
+**Output:**
 
-**Output** (AG-UI `TOOL_CALL_RESULT`):
-
-```json
-{"type":"TOOL_CALL_RESULT","messageId":"tc1-result","toolCallId":"tc1","content":"{\"status\":\"submitted\",\"values\":{\"env\":\"prod\"}}","role":"tool"}
+```jsonc
+{
+  "status": "submitted" | "cancelled" | "timeout",
+  "values": {
+    "field_id": "user value",    // string, number, bool, or array
+    // ...
+  }
+}
 ```
 
-### 2. Google A2UI format (recommended for A2UI agents)
+**Component reference:**
+
+#### Display
+
+| type | required fields | description |
+|---|---|---|
+| `text` | `id`, `content` | Plain text label |
+| `markdown` | `id`, `content` | Headings (`#`/`##`/`###`) and `**bold**` |
+| `code` | `id`, `content` | Read-only code block; `language` optional hint |
+| `image` | `id`, `src` | Image from file path or URL; `alt` optional |
+| `divider` | `id` | Horizontal separator |
+
+#### Input
+
+| type | key fields | output value type |
+|---|---|---|
+| `text-field` | `label`, `placeholder`, `required`, `default_value` | `string` |
+| `textarea` | `label`, `placeholder`, `required`, `default_value` | `string` |
+| `password` | `label`, `placeholder`, `required` | `string` |
+| `number-input` | `label`, `min`, `max`, `step`, `default_value` | `number` |
+| `date-picker` | `label`, `required`, `default_value` (YYYY-MM-DD) | `string` |
+| `time-picker` | `label`, `required`, `default_value` (HH:MM) | `string` |
+| `dropdown` | `label`, `options`, `required`, `default_value` | `string` |
+| `checkbox` | `label`, `default_value` | `boolean` |
+| `toggle` | `label`, `default_value` | `boolean` |
+| `checkbox-group` | `label`, `options`, `default_values` | `string[]` |
+| `radio-group` | `label`, `options`, `required`, `default_value` | `string` |
+| `slider` | `label`, `min` (0), `max` (100), `step`, `default_value` | `number` |
+| `rating` | `label`, `max` (5), `default_value` | `number` (1–max, 0 if unrated) |
+| `file-upload` | `label`, `accept`, `multiple` | `string` (path; `;`-separated if multiple) |
+
+`options` / `default_values` use `{ "value": "...", "label": "..." }` objects.
+
+#### Action
+
+| type | key fields | description |
+|---|---|---|
+| `button` | `label`, `action` | `action`: `"submit"` (default), `"cancel"`, `"custom"` |
+
+#### Layout
+
+| type | key fields | description |
+|---|---|---|
+| `card` | `title`, `children` | Bordered vertical group |
+| `row` | `children` | Horizontal side-by-side columns (equal width) |
+
+### 2. Google A2UI format (for A2UI agents)
 
 a2native natively accepts [Google A2UI v0.8+](https://github.com/google/a2ui) JSONL messages
 (`surfaceUpdate` / `beginRendering`) and emits A2UI-compliant `userAction` output.
@@ -142,92 +195,42 @@ This lets any agent or SDK built for Google A2UI drive a2native without adaptati
 {"userAction":{"name":"submit","surfaceId":"form1","sourceComponentId":"btn","timestamp":"2026-01-01T12:00:00Z","context":{"env":"prod"}}}
 ```
 
-**Supported A2UI standard catalog components:** `Text`, `Image`, `Divider`, `Button`,
+**Supported A2UI catalog components:** `Text`, `Image`, `Divider`, `Button`,
 `TextField` (with `textFieldType: "multiline"` → Textarea), `CheckBox`, `MultipleChoice`
 (maps to Dropdown / RadioGroup / CheckboxGroup depending on `maxAllowedSelections` and `variant`),
-`Slider`, `DateTimeInput`, `Column` / `Row` / `List` (as card groups), `Card`.
+`Slider`, `DateTimeInput`, `Column` / `List` (as card groups), `Row` (as horizontal row), `Card`.
 
 > **Note:** Data model path bindings (`"path": "/..."`) are not resolved — a2native is a
 > synchronous renderer with no server-side data model.  Use `literalString` / `literalNumber` /
 > `literalBoolean` for static values.
 
-### 3. a2native legacy format
+### 3. AG-UI format (for AG-UI agents)
 
-a2native's own simpler format — auto-detected when the input does not contain `surfaceUpdate`
-or `beginRendering`.
+a2native works as an **AG-UI frontend tool handler**: the agent emits
+`TOOL_CALL_START` → `TOOL_CALL_ARGS` (streaming form spec) → `TOOL_CALL_END` events,
+a2native renders the form, and emits a `TOOL_CALL_RESULT` event.
 
-The machine-readable schema is available at:
+Spec: [github.com/ag-ui-protocol/ag-ui](https://github.com/ag-ui-protocol/ag-ui)
 
-- [schema/a2ui-v0.1.schema.json](schema/a2ui-v0.1.schema.json) (in this repo)
-- [`https://a2native.github.io/schema/a2ui-v0.1.schema.json`](https://a2native.github.io/schema/a2ui-v0.1.schema.json) (hosted)
-- `a2n schema` — print it locally
-
-#### Legacy input schema
+**Input** (AG-UI JSONL):
 
 ```jsonc
-{
-  "title":   "My Form",          // optional window title
-  "timeout": 60,                 // optional auto-close after N seconds
-  "theme": {                     // optional
-    "dark_mode": true,
-    "accent_color": "#6C63FF"
-  },
-  "components": [ /* ... */ ]    // required
-}
+{"type":"RUN_STARTED","threadId":"thread-1","runId":"run-1"}
+{"type":"TOOL_CALL_START","toolCallId":"tc1","toolCallName":"show_form"}
+{"type":"TOOL_CALL_ARGS","toolCallId":"tc1","delta":"{\"title\":\"Deploy to production\",\"components\":["}
+{"type":"TOOL_CALL_ARGS","toolCallId":"tc1","delta":"  {\"id\":\"env\",\"type\":\"dropdown\",\"label\":\"Environment\",\"options\":[{\"value\":\"prod\",\"label\":\"Production\"}]},"}
+{"type":"TOOL_CALL_ARGS","toolCallId":"tc1","delta":"  {\"id\":\"ok\",\"type\":\"button\",\"label\":\"Deploy\",\"action\":\"submit\"}]}"}
+{"type":"TOOL_CALL_END","toolCallId":"tc1"}
 ```
 
-#### Legacy output schema
+The tool call args (assembled from all `TOOL_CALL_ARGS` deltas) can be in **either**
+a2native format or Google A2UI format — both are auto-detected.
 
-```jsonc
-{
-  "status": "submitted" | "cancelled" | "timeout",
-  "values": {
-    "field_id": "user value",    // string, number, bool, or array
-    // ...
-  }
-}
+**Output** (AG-UI `TOOL_CALL_RESULT`):
+
+```json
+{"type":"TOOL_CALL_RESULT","messageId":"tc1-result","toolCallId":"tc1","content":"{\"status\":\"submitted\",\"values\":{\"env\":\"prod\"}}","role":"tool"}
 ```
-
-#### Legacy component reference
-
-#### Display
-
-| type | required fields | description |
-|---|---|---|
-| `text` | `id`, `content` | Plain text label |
-| `markdown` | `id`, `content` | Headings (`#`/`##`/`###`) and `**bold**` |
-| `image` | `id`, `src` | Image from file path or URL; `alt` optional |
-| `divider` | `id` | Horizontal separator |
-
-#### Input
-
-| type | key fields | output value type |
-|---|---|---|
-| `text-field` | `label`, `placeholder`, `required`, `default_value` | `string` |
-| `textarea` | `label`, `placeholder`, `required`, `default_value` | `string` |
-| `number-input` | `label`, `min`, `max`, `step`, `default_value` | `number` |
-| `date-picker` | `label`, `required`, `default_value` (YYYY-MM-DD) | `string` |
-| `time-picker` | `label`, `required`, `default_value` (HH:MM) | `string` |
-| `dropdown` | `label`, `options`, `required`, `default_value` | `string` |
-| `checkbox` | `label`, `default_value` | `boolean` |
-| `checkbox-group` | `label`, `options`, `default_values` | `string[]` |
-| `radio-group` | `label`, `options`, `required`, `default_value` | `string` |
-| `slider` | `label`, `min` (0), `max` (100), `step`, `default_value` | `number` |
-| `file-upload` | `label`, `accept`, `multiple` | `string` (path, `;`-separated if multiple) |
-
-`options` / `default_values` use `{ "value": "...", "label": "..." }` objects.
-
-#### Action
-
-| type | key fields | description |
-|---|---|---|
-| `button` | `label`, `action` | `action`: `"submit"` (default), `"cancel"`, `"custom"` |
-
-#### Layout
-
-| type | key fields | description |
-|---|---|---|
-| `card` | `title`, `children` | Bordered group; children are any components |
 
 ---
 
