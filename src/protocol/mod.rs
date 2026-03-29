@@ -187,6 +187,45 @@ pub enum Component {
         title: Option<String>,
         children: Vec<Component>,
     },
+    Row {
+        id: String,
+        children: Vec<Component>,
+    },
+
+    // Extended input
+    Password {
+        id: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        placeholder: Option<String>,
+        #[serde(default)]
+        required: bool,
+    },
+    Rating {
+        id: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
+        #[serde(default = "default_rating_max")]
+        max: u32,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        default_value: Option<u32>,
+    },
+    Toggle {
+        id: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
+        #[serde(default)]
+        default_value: bool,
+    },
+
+    // Display (extended)
+    Code {
+        id: String,
+        content: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        language: Option<String>,
+    },
 }
 
 fn default_slider_min() -> f64 {
@@ -195,6 +234,10 @@ fn default_slider_min() -> f64 {
 
 fn default_slider_max() -> f64 {
     100.0
+}
+
+fn default_rating_max() -> u32 {
+    5
 }
 
 /// IPC message sent from client to a running session daemon.
@@ -387,11 +430,77 @@ mod tests {
                 {"id":"t14","type":"slider"},
                 {"id":"t15","type":"file-upload"},
                 {"id":"t16","type":"button","label":"Go"},
-                {"id":"t17","type":"card","children":[]}
+                {"id":"t17","type":"card","children":[]},
+                {"id":"t18","type":"row","children":[]},
+                {"id":"t19","type":"password"},
+                {"id":"t20","type":"rating"},
+                {"id":"t21","type":"toggle"},
+                {"id":"t22","type":"code","content":"fn main() {}"}
             ]
         }"#;
         let input: A2NInput = serde_json::from_str(json).unwrap();
-        assert_eq!(input.components.len(), 17);
+        assert_eq!(input.components.len(), 22);
+    }
+
+    #[test]
+    fn test_parse_row_with_children() {
+        let json = r#"{
+            "components":[{
+                "id":"row1","type":"row",
+                "children":[
+                    {"id":"a","type":"text-field","label":"A"},
+                    {"id":"b","type":"text-field","label":"B"}
+                ]
+            }]
+        }"#;
+        let input: A2NInput = serde_json::from_str(json).unwrap();
+        match &input.components[0] {
+            Component::Row { id, children } => {
+                assert_eq!(id, "row1");
+                assert_eq!(children.len(), 2);
+            }
+            _ => panic!("Expected Row"),
+        }
+    }
+
+    #[test]
+    fn test_parse_rating_defaults() {
+        let json = r#"{"components":[{"id":"r1","type":"rating"}]}"#;
+        let input: A2NInput = serde_json::from_str(json).unwrap();
+        match &input.components[0] {
+            Component::Rating { max, default_value, .. } => {
+                assert_eq!(*max, 5);
+                assert!(default_value.is_none());
+            }
+            _ => panic!("Expected Rating"),
+        }
+    }
+
+    #[test]
+    fn test_parse_password() {
+        let json = r#"{"components":[{"id":"pw","type":"password","label":"Password","required":true}]}"#;
+        let input: A2NInput = serde_json::from_str(json).unwrap();
+        match &input.components[0] {
+            Component::Password { id, label, required, .. } => {
+                assert_eq!(id, "pw");
+                assert_eq!(label.as_deref(), Some("Password"));
+                assert!(*required);
+            }
+            _ => panic!("Expected Password"),
+        }
+    }
+
+    #[test]
+    fn test_parse_code() {
+        let json = r#"{"components":[{"id":"c1","type":"code","content":"hello","language":"rust"}]}"#;
+        let input: A2NInput = serde_json::from_str(json).unwrap();
+        match &input.components[0] {
+            Component::Code { content, language, .. } => {
+                assert_eq!(content, "hello");
+                assert_eq!(language.as_deref(), Some("rust"));
+            }
+            _ => panic!("Expected Code"),
+        }
     }
 }
 
