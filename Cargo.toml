@@ -3,6 +3,13 @@ name = "a2native"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
+description = "Native desktop UI renderer for AI agents — one JSON in, one native window, one JSON out"
+homepage = "https://a2native.github.io"
+repository = "https://github.com/a2native/a2native"
+documentation = "https://github.com/a2native/a2native#readme"
+keywords = ["ai", "agent", "ui", "egui", "form"]
+categories = ["gui", "command-line-utilities"]
+readme = "README.md"
 
 [[bin]]
 name = "a2n"
