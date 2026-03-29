@@ -161,25 +161,37 @@ jobs:
             "
           done
 
-      - name: Publish platform packages
-        if: env.NPM_TOKEN != ''
+      - name: Publish to npm
         run: |
-          for dir in npm/a2native-*/; do
-            echo "Publishing $(basename $dir)..."
-            npm publish "$dir" --access public
+          if [ -z "$NPM_TOKEN" ]; then
+            echo "NPM_TOKEN secret not configured - skipping npm publish."
+            exit 0
+          fi
+          NPM_FAILED=0
+          for dir in npm/a2native-*/ npm/a2native/; do
+            PKG=$(basename "$dir")
+            echo "Publishing $PKG..."
+            set +e
+            npm publish "$dir" --access public > /tmp/npm-pub-$PKG.log 2>&1
+            CODE=$?
+            set -e
+            cat /tmp/npm-pub-$PKG.log
+            if [ $CODE -ne 0 ]; then
+              if grep -q "EOTP\|one-time password" /tmp/npm-pub-$PKG.log; then
+                echo "::error::npm EOTP error: Your NPM_TOKEN must be an 'Automation' type token to bypass 2FA in CI."
+                echo "::error::Go to https://www.npmjs.com/settings/~/tokens and generate a new token with type 'Automation', then update the NPM_TOKEN secret."
+                NPM_FAILED=1
+              elif grep -q "previously published\|already exists\|403" /tmp/npm-pub-$PKG.log; then
+                echo "  -> $PKG already published, skipping."
+              else
+                echo "::error::npm publish failed for $PKG with unexpected error (exit $CODE)"
+                NPM_FAILED=1
+              fi
+            fi
           done
+          [ $NPM_FAILED -eq 0 ] || exit 1
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Publish main package (@a2native/a2native)
-        if: env.NPM_TOKEN != ''
-        run: npm publish npm/a2native/ --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Skip npm publish (NPM_TOKEN not set)
-        if: env.NPM_TOKEN == ''
-        run: echo "NPM_TOKEN secret not configured - skipping npm publish."
 
       - uses: dtolnay/rust-toolchain@stable
 
