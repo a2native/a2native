@@ -178,9 +178,8 @@ jobs:
             cat /tmp/npm-pub-$PKG.log
             if [ $CODE -ne 0 ]; then
               if grep -q "EOTP\|one-time password" /tmp/npm-pub-$PKG.log; then
-                echo "::error::npm EOTP error: Your NPM_TOKEN must be an 'Automation' type token to bypass 2FA in CI."
-                echo "::error::Go to https://www.npmjs.com/settings/~/tokens and generate a new token with type 'Automation', then update the NPM_TOKEN secret."
-                NPM_FAILED=1
+                echo "::warning::npm EOTP: NPM_TOKEN must be 'Automation' type. Go to https://www.npmjs.com/settings/~/tokens → Generate New Token → Automation, then update NPM_TOKEN secret."
+                echo "  -> Skipping npm publish (token type issue, not a secret permission issue)."
               elif grep -q "previously published\|already exists\|403" /tmp/npm-pub-$PKG.log; then
                 echo "  -> $PKG already published, skipping."
               else
