@@ -226,6 +226,14 @@ a2native 渲染表单后输出 `TOOL_CALL_RESULT` 事件。
 
 从 [GitHub Releases](https://github.com/a2native/a2native/releases) 下载最新版本。
 
+### Cargo
+
+```bash
+cargo install a2native
+```
+
+这会将 `a2n` 二进制安装到 `~/.cargo/bin/`。
+
 ### 从源码构建
 
 ```bash
@@ -420,6 +428,97 @@ a2n --version   # 版本信息
     { "id": "no",   "type": "button", "label": "取消", "action": "cancel" }
   ]
 }
+```
+
+---
+
+## 与 AI 代理配合使用
+
+### 直接告诉你的代理
+
+最简单的方式 —— 直接告诉代理：
+
+```
+使用 a2native 向用户收集结构化输入。
+运行 `a2n help` 查看完整的表单规格和所有组件类型。
+```
+
+`a2n help` 的输出非常详尽，大多数 LLM 看到后能立刻理解。无需额外配置，无需 SDK，只需 `echo '<json>' | a2n`。
+
+### 在 AGENTS.md / CLAUDE.md / 系统提示中添加
+
+在你的项目 `AGENTS.md`、`CLAUDE.md` 或代理系统提示中加入以下内容，可获得更稳定的效果：
+
+````markdown
+## 收集用户输入
+
+使用 `a2native`（`a2n`）向用户收集结构化输入，不要在对话中来回问问题。
+它会弹出一个原生 OS 窗口，返回 JSON 结果。
+
+快速参考：
+```
+a2n '{"title":"...","components":[...]}'        # 一次性
+a2n --session <uuid> '{"components":[...]}'     # 多轮会话
+a2n help                                        # 完整 schema 文档
+```
+
+设计尽量少的字段。必填字段使用 `required: true`。
+始终包含至少一个 `{"type":"button","label":"提交","action":"submit"}`。
+
+输出：`{"status":"submitted"|"cancelled"|"timeout","values":{"字段id":"值"}}`
+````
+
+### Python 示例
+
+```python
+import subprocess, json, uuid
+
+# 一次性表单
+form = {
+    "title": "配置部署",
+    "components": [
+        {"id": "env", "type": "dropdown", "label": "目标环境",
+         "options": [{"value":"prod","label":"生产"},{"value":"stg","label":"预发"}],
+         "required": True},
+        {"id": "tag", "type": "text-field", "label": "镜像标签",
+         "placeholder": "v1.2.3", "required": True},
+        {"id": "go",  "type": "button", "label": "部署", "action": "submit"},
+    ]
+}
+
+result = subprocess.run(["a2n"], input=json.dumps(form),
+                        capture_output=True, text=True)
+data = json.loads(result.stdout)
+
+if data["status"] == "submitted":
+    deploy(data["values"]["env"], data["values"]["tag"])
+```
+
+### JavaScript SDK
+
+```bash
+npm install @a2native/js
+```
+
+```typescript
+import { showForm, Session } from "@a2native/js";
+
+// 一次性
+const result = await showForm({
+  title: "选择模型",
+  components: [
+    { id: "model", type: "radio-group", label: "模型",
+      options: [{ value: "gpt-4o", label: "GPT-4o" }, { value: "claude", label: "Claude" }],
+      required: true },
+    { id: "ok", type: "button", label: "确认", action: "submit" },
+  ],
+});
+
+// 多轮会话
+const session = new Session();
+const r1 = await session.showForm(step1);
+const r2 = await session.showForm(step2);
+await session.close();
 ```
 
 ---

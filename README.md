@@ -240,6 +240,14 @@ a2native format or Google A2UI format — both are auto-detected.
 
 Download the latest release from [GitHub Releases](https://github.com/a2native/a2native/releases).
 
+### Cargo
+
+```bash
+cargo install a2native
+```
+
+This installs the `a2n` binary to `~/.cargo/bin/`.
+
 ### Build from source
 
 ```bash
@@ -455,6 +463,152 @@ a2n --version   # version
     { "id": "no",   "type": "button", "label": "Cancel", "action": "cancel" }
   ]
 }
+```
+
+---
+
+## Usage with AI Agents
+
+### Just tell your agent
+
+The simplest approach — just tell your agent to use it:
+
+```
+Use a2native to collect structured input from the user.
+Run `a2n help` to see the full form spec and all component types.
+```
+
+The `a2n help` output is comprehensive and most LLMs understand it immediately.
+No setup, no SDK required — just `echo '<json>' | a2n`.
+
+### What to put in AGENTS.md / CLAUDE.md / system prompt
+
+For more consistent results, add this to your project's `AGENTS.md`, `CLAUDE.md`,
+or your agent's system prompt:
+
+````markdown
+## Collecting User Input
+
+Use `a2native` (`a2n`) to collect structured input from the user instead of asking
+questions in chat. This shows a native OS window and returns a JSON result.
+
+Quick reference:
+```
+a2n '{"title":"...","components":[...]}'   # one-shot
+a2n --session <uuid> '{"components":[...]}'  # multi-turn session
+a2n help                                   # full schema reference
+```
+
+Design forms with the fewest fields possible. Use `required: true` for mandatory
+fields. Always include at least one `{"type":"button","label":"Submit","action":"submit"}`.
+
+Output: `{"status":"submitted"|"cancelled"|"timeout","values":{"field_id":"value"}}`
+````
+
+### Inline form generation example
+
+Here's the JSON pattern an agent should generate for a typical "ask user" scenario:
+
+```jsonc
+// Agent generates this JSON and pipes it to a2n:
+{
+  "title": "Configure deployment",
+  "components": [
+    { "id": "env",     "type": "dropdown",    "label": "Target environment",
+      "options": [{"value":"prod","label":"Production"},{"value":"stg","label":"Staging"}],
+      "required": true },
+    { "id": "tag",     "type": "text-field",  "label": "Docker image tag",
+      "placeholder": "v1.2.3", "required": true },
+    { "id": "confirm", "type": "checkbox",    "label": "I have reviewed the diff",
+      "default_value": false },
+    { "id": "go",      "type": "button",      "label": "Deploy", "action": "submit" },
+    { "id": "no",      "type": "button",      "label": "Cancel", "action": "cancel" }
+  ]
+}
+```
+
+```python
+import subprocess, json
+
+result = subprocess.run(
+    ["a2n"],
+    input=json.dumps(form_spec),
+    capture_output=True, text=True
+)
+data = json.loads(result.stdout)
+if data["status"] == "submitted":
+    deploy(data["values"]["env"], data["values"]["tag"])
+```
+
+### Multi-turn wizard (session mode)
+
+When an agent needs to guide a user through multiple steps, open one window and
+update it across turns instead of spawning a new window each time:
+
+```python
+import subprocess, json, uuid
+
+session = str(uuid.uuid4())
+
+# Step 1
+r = subprocess.run(["a2n", "--session", session],
+    input=json.dumps(step1_spec), capture_output=True, text=True)
+step1 = json.loads(r.stdout)
+
+# Step 2 — same window, just updated
+r = subprocess.run(["a2n", "--session", session],
+    input=json.dumps(step2_spec), capture_output=True, text=True)
+
+# Done
+subprocess.run(["a2n", "--close", session])
+```
+
+### LLM tool definition
+
+If your framework uses tool/function calling, define a2native as a tool:
+
+```json
+{
+  "name": "show_form",
+  "description": "Show a native UI form to the user and return their input. Use this instead of asking questions in chat — it's faster and less error-prone for structured data collection.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "title":      { "type": "string", "description": "Window title" },
+      "components": { "type": "array",  "description": "Form components. See `a2n help` for the full spec." }
+    },
+    "required": ["components"]
+  }
+}
+```
+
+When the LLM calls this tool, your handler runs `echo '<args>' | a2n` and returns the result JSON.
+
+### JavaScript SDK
+
+```bash
+npm install @a2native/js
+```
+
+```typescript
+import { showForm, Session } from "@a2native/js";
+
+// One-shot
+const result = await showForm({
+  title: "Pick a model",
+  components: [
+    { id: "model", type: "radio-group", label: "Model",
+      options: [{ value: "gpt-4o", label: "GPT-4o" }, { value: "claude", label: "Claude" }],
+      required: true },
+    { id: "ok", type: "button", label: "Select", action: "submit" },
+  ],
+});
+
+// Multi-turn session
+const session = new Session();
+const r1 = await session.showForm(step1);
+const r2 = await session.showForm(step2);
+await session.close();
 ```
 
 ---
