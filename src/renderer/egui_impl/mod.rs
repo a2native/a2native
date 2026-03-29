@@ -206,7 +206,9 @@ impl Renderer for EguiRenderer {
 // ── Session daemon ────────────────────────────────────────────────────────────
 
 /// Start a long-lived window managed through a TCP IPC channel.
-pub fn run_daemon(uuid: &str) {
+/// Optionally also binds an HTTP/SSE server and/or a WebSocket server
+/// so external agents can connect without the CLI wrapper.
+pub fn run_daemon(uuid: &str, sse_port: Option<u16>, ws_port: Option<u16>) {
     use std::net::TcpListener;
     use std::sync::mpsc;
     use std::thread;
@@ -217,6 +219,7 @@ pub fn run_daemon(uuid: &str) {
 
     let (ipc_tx, ipc_rx) = mpsc::channel::<IpcCommand>();
 
+    // TCP IPC listener (used by `a2n --session UUID` CLI invocations)
     {
         let tx = ipc_tx.clone();
         thread::spawn(move || {
@@ -230,6 +233,16 @@ pub fn run_daemon(uuid: &str) {
                 }
             }
         });
+    }
+
+    // Optional HTTP/SSE server
+    if let Some(port) = sse_port {
+        crate::server::start_sse(port, ipc_tx.clone());
+    }
+
+    // Optional WebSocket server
+    if let Some(port) = ws_port {
+        crate::server::start_ws(port, ipc_tx.clone());
     }
 
     // Block until the first form arrives over IPC.

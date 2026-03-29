@@ -1,5 +1,6 @@
 mod protocol;
 mod renderer;
+mod server;
 mod session;
 
 use std::io::{self, IsTerminal, Read};
@@ -44,6 +45,16 @@ struct Cli {
     /// [Internal] Run as session daemon — do not call directly.
     #[arg(long, hide = true, requires = "session", conflicts_with = "close")]
     daemon: bool,
+
+    /// Expose an HTTP/SSE endpoint on this port for external agents (requires --session).
+    /// POST /form → streams text/event-stream with 'waiting' then 'result' events.
+    #[arg(long, value_name = "PORT", conflicts_with = "close")]
+    sse: Option<u16>,
+
+    /// Expose a WebSocket endpoint on this port for external agents (requires --session).
+    /// Send form spec as text frame, receive {"type":"result","data":{...}} when submitted.
+    #[arg(long, value_name = "PORT", conflicts_with = "close")]
+    ws: Option<u16>,
 }
 
 #[derive(Subcommand)]
@@ -83,6 +94,28 @@ SESSION MODE
   The first invocation spawns a background daemon; subsequent calls update
   the form in the existing window.  Close with: a2n --close <UUID>
 
+HTTP/SSE & WEBSOCKET  (external agent API)
+  Add --sse <PORT> and/or --ws <PORT> to a session to expose endpoints
+  that external agents (Python, Node, etc.) can connect to directly —
+  no CLI wrapper needed.
+
+  a2n --session <UUID> --sse <PORT>   Daemon with HTTP/SSE on PORT
+  a2n --session <UUID> --ws  <PORT>   Daemon with WebSocket on PORT
+
+  SSE  POST http://127.0.0.1:<PORT>/form    (body = JSON form spec)
+       GET  http://127.0.0.1:<PORT>/health  (liveness probe)
+       Response: text/event-stream
+         event: waiting   data: {{status:waiting}}
+         event: result    data: {{...a2native output JSON...}}
+
+  WS   ws://127.0.0.1:<PORT>
+       Send:    JSON form spec text frame (a2native / A2UI / AG-UI)
+       Receive: {{type:waiting}}  then  {{type:result, data:{{...}}}}
+       One connection supports multiple sequential forms.
+
+  Both endpoints auto-detect input format (a2native, Google A2UI, AG-UI).
+  Close the daemon with: a2n --close <UUID>
+
 SCHEMA
   Run `a2n schema` to see the full JSON Schema for the a2native input format.
   Online: https://a2native.github.io/schema/a2native-v0.1.schema.json
@@ -110,10 +143,18 @@ EXAMPLES
   # Multi-field form via stdin
   cat form.json | a2n
 
-  # Multi-turn wizard
+  # Multi-turn wizard (CLI session)
   echo '{{...step1...}}' | a2n --session my-wizard-abc123
   echo '{{...step2...}}' | a2n --session my-wizard-abc123
   a2n --close my-wizard-abc123
+
+  # Start SSE daemon for an external Python/Node agent
+  a2n --session my-session --sse 8080
+  # Agent POSTs to http://127.0.0.1:8080/form and reads SSE result
+
+  # Start WebSocket daemon
+  a2n --session my-session --ws 8081
+  # Agent connects to ws://127.0.0.1:8081 and sends form specs as text frames
 "
     );
 }
@@ -146,83 +187,92 @@ fn main() {
             eprintln!("error: --daemon requires --session <UUID>");
             std::process::exit(1);
         });
-        renderer::egui_impl::run_daemon(uuid);
+        renderer::egui_impl::run_daemon(uuid, cli.sse, cli.ws);
         return;
     }
 
     // ── Resolve JSON input: inline arg takes priority, then stdin ─────────────
-    let input_json = if let Some(json) = cli.json {
-        json
+    let input_json: Option<String> = if let Some(json) = cli.json {
+        Some(json)
     } else if !io::stdin().is_terminal() {
         // stdin is a pipe / redirected file — read it
         let mut buf = String::new();
         io::stdin()
             .read_to_string(&mut buf)
             .expect("Failed to read stdin");
-        buf
+        Some(buf)
     } else {
-        // No JSON provided and stdin is a TTY → show help
-        print_help();
-        return;
+        None
     };
 
-    // ── Detect format and parse input ────────────────────────────────────────
+    // No input: valid only when --session + (--sse | --ws) = server-only mode.
+    if input_json.is_none() && cli.close.is_none() {
+        let server_mode = (cli.sse.is_some() || cli.ws.is_some()) && cli.session.is_some();
+        if !server_mode {
+            print_help();
+            return;
+        }
+    }
+
+    // ── Detect format and parse input (only when input is present) ────────────
     //
     // Priority: AG-UI envelope → Google A2UI JSONL → a2native legacy JSON
-    //
-    // AG-UI: TOOL_CALL_START/ARGS/END stream wrapping the form spec.
-    //        Output: TOOL_CALL_RESULT event.
-    // A2UI:  Google A2UI surfaceUpdate/beginRendering JSONL.
-    //        Output: userAction event.
-    // Legacy: a2native-own flat JSON format.
-    //        Output: {status, values}.
 
     enum InputFormat {
         Agui(protocol::agui::AGUIContext),
-        Other, // A2UI or legacy — inner_a2ui_ctx distinguishes them
+        Other, // A2UI or legacy — a2ui_ctx distinguishes them
     }
 
-    // For AG-UI we first unwrap the envelope to get the inner form spec.
-    let (form_json, fmt): (String, InputFormat) =
-        if protocol::agui::is_agui(&input_json) {
-            match protocol::agui::parse(&input_json) {
-                Ok((args, ctx)) => (args, InputFormat::Agui(ctx)),
-                Err(e) => {
-                    eprintln!("error: could not parse AG-UI input: {e}");
-                    std::process::exit(1);
-                }
-            }
-        } else {
-            (input_json.clone(), InputFormat::Other)
-        };
+    struct ParsedInput {
+        input: protocol::A2NInput,
+        fmt: InputFormat,
+        a2ui_ctx: Option<protocol::a2ui::A2UIContext>,
+    }
 
-    // Now parse the inner form spec (either A2UI or legacy).
-    let (input, inner_a2ui_ctx): (protocol::A2NInput, Option<protocol::a2ui::A2UIContext>) =
-        if protocol::a2ui::is_a2ui(&form_json) {
-            match protocol::a2ui::parse(&form_json) {
-                Ok((a2n_input, ctx)) => (a2n_input, Some(ctx)),
-                Err(e) => {
-                    eprintln!("error: could not parse A2UI form spec: {e}");
-                    std::process::exit(1);
+    let parsed: Option<ParsedInput> = match input_json {
+        Some(raw) => {
+            let (form_json, fmt): (String, InputFormat) =
+                if protocol::agui::is_agui(&raw) {
+                    match protocol::agui::parse(&raw) {
+                        Ok((args, ctx)) => (args, InputFormat::Agui(ctx)),
+                        Err(e) => {
+                            eprintln!("error: could not parse AG-UI input: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                } else {
+                    (raw, InputFormat::Other)
+                };
+
+            let (input, a2ui_ctx) = if protocol::a2ui::is_a2ui(&form_json) {
+                match protocol::a2ui::parse(&form_json) {
+                    Ok((a2n_input, ctx)) => (a2n_input, Some(ctx)),
+                    Err(e) => {
+                        eprintln!("error: could not parse A2UI form spec: {e}");
+                        std::process::exit(1);
+                    }
                 }
-            }
-        } else {
-            let a2n_input: protocol::A2NInput =
-                serde_json::from_str(&form_json).unwrap_or_else(|e| {
-                    eprintln!("error: could not parse input JSON: {e}");
-                    std::process::exit(1);
-                });
-            (a2n_input, None)
-        };
+            } else {
+                let a2n_input: protocol::A2NInput =
+                    serde_json::from_str(&form_json).unwrap_or_else(|e| {
+                        eprintln!("error: could not parse input JSON: {e}");
+                        std::process::exit(1);
+                    });
+                (a2n_input, None)
+            };
+
+            Some(ParsedInput { input, fmt, a2ui_ctx })
+        }
+        None => None,
+    };
 
     /// Emit output in the correct envelope format.
     fn emit_output(
         output: protocol::A2NOutput,
         fmt: &InputFormat,
-        inner_a2ui_ctx: Option<&protocol::a2ui::A2UIContext>,
+        a2ui_ctx: Option<&protocol::a2ui::A2UIContext>,
     ) {
-        // Build the inner result JSON string.
-        let inner_json = if let Some(ctx) = inner_a2ui_ctx {
+        let inner_json = if let Some(ctx) = a2ui_ctx {
             let a2ui_out = protocol::a2ui::to_output(&output, ctx);
             serde_json::to_string(&a2ui_out).unwrap()
         } else {
@@ -240,39 +290,63 @@ fn main() {
         }
     }
 
-    // ── Normal / session client mode ─────────────────────────────────────────
+    // ── Session mode ─────────────────────────────────────────────────────────
     if let Some(uuid) = &cli.session {
-        // Try to forward to an already-running session daemon.
-        if let Some(output) = session::try_send(uuid, &input) {
-            emit_output(output, &fmt, inner_a2ui_ctx.as_ref());
-            return;
-        }
+        let sse_port = cli.sse;
+        let ws_port = cli.ws;
 
-        // No daemon running yet — clear any stale port file, then spawn.
-        session::remove_port(uuid);
-        spawn_daemon(uuid);
-        if !session::wait_for_daemon(uuid, 10) {
-            eprintln!("error: timed out waiting for session daemon to start");
-            std::process::exit(1);
-        }
+        if let Some(p) = parsed {
+            // Submit a form to the daemon (spawning it if needed).
+            if let Some(output) = session::try_send(uuid, &p.input) {
+                emit_output(output, &p.fmt, p.a2ui_ctx.as_ref());
+                return;
+            }
 
-        let output = session::try_send(uuid, &input).unwrap_or_else(|| {
-            eprintln!("error: failed to connect to session daemon");
-            std::process::exit(1);
-        });
-        emit_output(output, &fmt, inner_a2ui_ctx.as_ref());
-    } else {
-        // Stateless one-shot mode.
-        let renderer = renderer::egui_impl::EguiRenderer::new();
-        let output = renderer::Renderer::run(renderer, input);
-        emit_output(output, &fmt, inner_a2ui_ctx.as_ref());
+            session::remove_port(uuid);
+            spawn_daemon(uuid, sse_port, ws_port);
+            if !session::wait_for_daemon(uuid, 10) {
+                eprintln!("error: timed out waiting for session daemon to start");
+                std::process::exit(1);
+            }
+
+            let output = session::try_send(uuid, &p.input).unwrap_or_else(|| {
+                eprintln!("error: failed to connect to session daemon");
+                std::process::exit(1);
+            });
+            emit_output(output, &p.fmt, p.a2ui_ctx.as_ref());
+        } else {
+            // Server-only mode: spawn daemon and exit.  External agents connect
+            // via SSE / WebSocket; this process just starts the daemon.
+            session::remove_port(uuid);
+            spawn_daemon(uuid, sse_port, ws_port);
+            if let Some(port) = sse_port {
+                eprintln!("a2n: SSE  http://127.0.0.1:{port}/form  (session: {uuid})");
+            }
+            if let Some(port) = ws_port {
+                eprintln!("a2n: WS   ws://127.0.0.1:{port}/  (session: {uuid})");
+            }
+            eprintln!("a2n: close with  a2n --close {uuid}");
+        }
+        return;
     }
+
+    // ── One-shot (stateless) mode ─────────────────────────────────────────────
+    let p = parsed.expect("input_json is Some in one-shot mode");
+    let renderer = renderer::egui_impl::EguiRenderer::new();
+    let output = renderer::Renderer::run(renderer, p.input);
+    emit_output(output, &p.fmt, p.a2ui_ctx.as_ref());
 }
 
-fn spawn_daemon(uuid: &str) {
+fn spawn_daemon(uuid: &str, sse_port: Option<u16>, ws_port: Option<u16>) {
     let exe = std::env::current_exe().expect("Cannot determine executable path");
     let mut cmd = std::process::Command::new(&exe);
     cmd.arg("--daemon").arg("--session").arg(uuid);
+    if let Some(port) = sse_port {
+        cmd.arg("--sse").arg(port.to_string());
+    }
+    if let Some(port) = ws_port {
+        cmd.arg("--ws").arg(port.to_string());
+    }
 
     // On Windows, detach from the parent console so no extra window pops up.
     #[cfg(windows)]
