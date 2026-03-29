@@ -97,6 +97,9 @@ jobs:
     needs: [guard, build]
     if: ${{ needs.guard.outputs.is_release == 'true' && !cancelled() && needs.build.result != 'failure' }}
     runs-on: ubuntu-latest
+    env:
+      CARGO_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      NPM_TOKEN: ${{ secrets.ORG_TOKEN }}
 
     steps:
       - uses: actions/checkout@v4
@@ -130,13 +133,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Publish to crates.io
-        if: ${{ secrets.CARGO_REGISTRY_TOKEN != '' }}
+        if: env.CARGO_TOKEN != ''
         run: cargo publish --no-verify
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       - name: Skip crates.io publish (token not set)
-        if: ${{ secrets.CARGO_REGISTRY_TOKEN == '' }}
+        if: env.CARGO_TOKEN == ''
         run: echo "CARGO_REGISTRY_TOKEN not configured - skipping crates.io publish."
 
       - name: Copy binaries into npm platform packages
@@ -171,7 +174,7 @@ jobs:
           done
 
       - name: Publish platform packages
-        if: ${{ secrets.ORG_TOKEN != '' }}
+        if: env.NPM_TOKEN != ''
         run: |
           for dir in npm/a2native-*/; do
             echo "Publishing $(basename $dir)..."
@@ -181,11 +184,11 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.ORG_TOKEN }}
 
       - name: Publish main package (@a2native/a2native)
-        if: ${{ secrets.ORG_TOKEN != '' }}
+        if: env.NPM_TOKEN != ''
         run: npm publish npm/a2native/ --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.ORG_TOKEN }}
 
       - name: Skip npm publish (ORG_TOKEN not set)
-        if: ${{ secrets.ORG_TOKEN == '' }}
+        if: env.NPM_TOKEN == ''
         run: echo "ORG_TOKEN secret not configured - skipping npm publish."
