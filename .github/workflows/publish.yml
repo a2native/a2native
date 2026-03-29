@@ -5,23 +5,21 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write   # create GitHub releases
-  id-token: write   # npm provenance
+  contents: write
+  id-token: write
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # ── Guard: always succeeds, so branch-push runs show green (not failure) ──────
   guard:
     name: Check trigger
     runs-on: ubuntu-latest
     outputs:
       is_release: ${{ startsWith(github.ref, 'refs/tags/v') }}
     steps:
-      - run: echo "ref=${{ github.ref }} is_release=${{ startsWith(github.ref, 'refs/tags/v') }}"
+      - run: echo "ref=${{ github.ref }}"
 
-  # ── Build native binaries on each target platform ────────────────────────────
   build:
     name: Build (${{ matrix.platform }}-${{ matrix.arch }})
     needs: guard
@@ -39,7 +37,7 @@ jobs:
 
           - platform: darwin
             arch: x64
-            runner: macos-latest   # ARM runner; cross-compiles to x86_64 via Apple clang
+            runner: macos-latest
             target: x86_64-apple-darwin
             binary: a2n
 
@@ -94,7 +92,6 @@ jobs:
           path: target/${{ matrix.target }}/release/${{ matrix.binary }}
           if-no-files-found: error
 
-  # ── Create GitHub release + publish to npm ────────────────────────────────────
   publish:
     name: Publish
     needs: [guard, build]
@@ -122,7 +119,6 @@ jobs:
         run: |
           cd release-assets
           sha256sum * > SHA256SUMS.txt
-          echo "── checksums ──"
           cat SHA256SUMS.txt
 
       - name: Create GitHub Release
@@ -141,7 +137,7 @@ jobs:
 
       - name: Skip crates.io publish (token not set)
         if: ${{ secrets.CARGO_REGISTRY_TOKEN == '' }}
-        run: echo "⚠️  CARGO_REGISTRY_TOKEN not configured — skipping crates.io publish."
+        run: echo "CARGO_REGISTRY_TOKEN not configured - skipping crates.io publish."
 
       - name: Copy binaries into npm platform packages
         run: |
@@ -178,7 +174,7 @@ jobs:
         if: ${{ secrets.ORG_TOKEN != '' }}
         run: |
           for dir in npm/a2native-*/; do
-            echo "→ Publishing $(basename $dir)…"
+            echo "Publishing $(basename $dir)..."
             npm publish "$dir" --access public
           done
         env:
@@ -192,4 +188,4 @@ jobs:
 
       - name: Skip npm publish (ORG_TOKEN not set)
         if: ${{ secrets.ORG_TOKEN == '' }}
-        run: echo "⚠️  ORG_TOKEN secret not configured — skipping npm publish."
+        run: echo "ORG_TOKEN secret not configured - skipping npm publish."
