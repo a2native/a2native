@@ -87,9 +87,13 @@ SCHEMA
   Run `a2n schema` to see the full JSON Schema for the a2native input format.
   Online: https://a2native.github.io/schema/a2ui-v0.1.schema.json
 
-  a2n also natively accepts Google A2UI v0.8+ JSONL format (surfaceUpdate /
-  beginRendering messages) and emits A2UI userAction output when it detects
-  that format.  See: https://github.com/google/a2ui
+  a2n auto-detects the input format (priority order):
+    1. AG-UI  — TOOL_CALL_START/ARGS/END event stream  → TOOL_CALL_RESULT output
+    2. A2UI   — Google A2UI v0.8 surfaceUpdate JSONL   → userAction output
+    3. Legacy — a2native flat JSON format              → {{status, values}} output
+
+  AG-UI spec:     https://github.com/ag-ui-protocol/ag-ui
+  Google A2UI:    https://github.com/google/a2ui
 
 SECURITY
   Every window displays a permanent banner warning the user that the
@@ -163,36 +167,76 @@ fn main() {
     };
 
     // ── Detect format and parse input ────────────────────────────────────────
-    let is_a2ui = protocol::a2ui::is_a2ui(&input_json);
+    //
+    // Priority: AG-UI envelope → Google A2UI JSONL → a2native legacy JSON
+    //
+    // AG-UI: TOOL_CALL_START/ARGS/END stream wrapping the form spec.
+    //        Output: TOOL_CALL_RESULT event.
+    // A2UI:  Google A2UI surfaceUpdate/beginRendering JSONL.
+    //        Output: userAction event.
+    // Legacy: a2native-own flat JSON format.
+    //        Output: {status, values}.
 
-    let (input, a2ui_ctx): (protocol::A2NInput, Option<protocol::a2ui::A2UIContext>) =
-        if is_a2ui {
-            match protocol::a2ui::parse(&input_json) {
+    enum InputFormat {
+        Agui(protocol::agui::AGUIContext),
+        Other, // A2UI or legacy — inner_a2ui_ctx distinguishes them
+    }
+
+    // For AG-UI we first unwrap the envelope to get the inner form spec.
+    let (form_json, fmt): (String, InputFormat) =
+        if protocol::agui::is_agui(&input_json) {
+            match protocol::agui::parse(&input_json) {
+                Ok((args, ctx)) => (args, InputFormat::Agui(ctx)),
+                Err(e) => {
+                    eprintln!("error: could not parse AG-UI input: {e}");
+                    std::process::exit(1);
+                }
+            }
+        } else {
+            (input_json.clone(), InputFormat::Other)
+        };
+
+    // Now parse the inner form spec (either A2UI or legacy).
+    let (input, inner_a2ui_ctx): (protocol::A2NInput, Option<protocol::a2ui::A2UIContext>) =
+        if protocol::a2ui::is_a2ui(&form_json) {
+            match protocol::a2ui::parse(&form_json) {
                 Ok((a2n_input, ctx)) => (a2n_input, Some(ctx)),
                 Err(e) => {
-                    eprintln!("error: could not parse A2UI input: {e}");
+                    eprintln!("error: could not parse A2UI form spec: {e}");
                     std::process::exit(1);
                 }
             }
         } else {
             let a2n_input: protocol::A2NInput =
-                serde_json::from_str(&input_json).unwrap_or_else(|e| {
+                serde_json::from_str(&form_json).unwrap_or_else(|e| {
                     eprintln!("error: could not parse input JSON: {e}");
                     std::process::exit(1);
                 });
             (a2n_input, None)
         };
 
-    /// Emit output: A2UI `userAction` if input was A2UI format, otherwise our legacy format.
+    /// Emit output in the correct envelope format.
     fn emit_output(
         output: protocol::A2NOutput,
-        a2ui_ctx: Option<&protocol::a2ui::A2UIContext>,
+        fmt: &InputFormat,
+        inner_a2ui_ctx: Option<&protocol::a2ui::A2UIContext>,
     ) {
-        if let Some(ctx) = a2ui_ctx {
+        // Build the inner result JSON string.
+        let inner_json = if let Some(ctx) = inner_a2ui_ctx {
             let a2ui_out = protocol::a2ui::to_output(&output, ctx);
-            println!("{}", serde_json::to_string(&a2ui_out).unwrap());
+            serde_json::to_string(&a2ui_out).unwrap()
         } else {
-            println!("{}", serde_json::to_string(&output).unwrap());
+            serde_json::to_string(&output).unwrap()
+        };
+
+        match fmt {
+            InputFormat::Agui(ctx) => {
+                let agui_out = protocol::agui::to_output(&inner_json, ctx);
+                println!("{}", serde_json::to_string(&agui_out).unwrap());
+            }
+            InputFormat::Other => {
+                println!("{inner_json}");
+            }
         }
     }
 
@@ -200,7 +244,7 @@ fn main() {
     if let Some(uuid) = &cli.session {
         // Try to forward to an already-running session daemon.
         if let Some(output) = session::try_send(uuid, &input) {
-            emit_output(output, a2ui_ctx.as_ref());
+            emit_output(output, &fmt, inner_a2ui_ctx.as_ref());
             return;
         }
 
@@ -216,12 +260,12 @@ fn main() {
             eprintln!("error: failed to connect to session daemon");
             std::process::exit(1);
         });
-        emit_output(output, a2ui_ctx.as_ref());
+        emit_output(output, &fmt, inner_a2ui_ctx.as_ref());
     } else {
         // Stateless one-shot mode.
         let renderer = renderer::egui_impl::EguiRenderer::new();
         let output = renderer::Renderer::run(renderer, input);
-        emit_output(output, a2ui_ctx.as_ref());
+        emit_output(output, &fmt, inner_a2ui_ctx.as_ref());
     }
 }
 

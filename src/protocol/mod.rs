@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 pub mod a2ui;
+pub mod agui;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct A2NInput {
