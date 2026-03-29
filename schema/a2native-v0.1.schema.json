@@ -95,7 +95,7 @@
         "type":    { "const": "markdown" },
         "content": {
           "type": "string",
-          "description": "Markdown text. Supports headings (#/##/###) and **bold**."
+          "description": "Markdown text. Supports: headings (#/##/###), **bold**, *italic*, `inline code`, [links](url), bullet lists (- or *), numbered lists (1. 2.), horizontal rules (---)."
         }
       }
     },
@@ -129,7 +129,11 @@
         "label":         { "type": "string" },
         "placeholder":   { "type": "string" },
         "required":      { "type": "boolean", "default": false },
-        "default_value": { "type": "string" }
+        "default_value": { "type": "string" },
+        "min_length":    { "type": "integer", "minimum": 0, "description": "Minimum character length." },
+        "max_length":    { "type": "integer", "minimum": 0, "description": "Maximum character length." },
+        "pattern":       { "type": "string", "description": "ECMAScript-compatible regular expression the value must match." },
+        "error_message": { "type": "string", "description": "Custom error message shown when validation fails." }
       },
       "x-output": "string"
     },
@@ -143,7 +147,11 @@
         "label":         { "type": "string" },
         "placeholder":   { "type": "string" },
         "required":      { "type": "boolean", "default": false },
-        "default_value": { "type": "string" }
+        "default_value": { "type": "string" },
+        "min_length":    { "type": "integer", "minimum": 0, "description": "Minimum character length." },
+        "max_length":    { "type": "integer", "minimum": 0, "description": "Maximum character length." },
+        "pattern":       { "type": "string", "description": "ECMAScript-compatible regular expression the value must match." },
+        "error_message": { "type": "string", "description": "Custom error message shown when validation fails." }
       },
       "x-output": "string"
     },
@@ -319,11 +327,15 @@
       "required": ["id", "type"],
       "additionalProperties": false,
       "properties": {
-        "id":          { "type": "string" },
-        "type":        { "const": "password" },
-        "label":       { "type": "string" },
-        "placeholder": { "type": "string" },
-        "required":    { "type": "boolean", "default": false }
+        "id":            { "type": "string" },
+        "type":          { "const": "password" },
+        "label":         { "type": "string" },
+        "placeholder":   { "type": "string" },
+        "required":      { "type": "boolean", "default": false },
+        "min_length":    { "type": "integer", "minimum": 0, "description": "Minimum character length." },
+        "max_length":    { "type": "integer", "minimum": 0, "description": "Maximum character length." },
+        "pattern":       { "type": "string", "description": "ECMAScript-compatible regular expression the value must match." },
+        "error_message": { "type": "string", "description": "Custom error message shown when validation fails." }
       },
       "x-output": "string (not shown in output — warn users not to submit secrets)"
     },

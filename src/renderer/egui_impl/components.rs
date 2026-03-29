@@ -5,6 +5,7 @@ use crate::renderer::egui_impl::{FormResult, FormState};
 
 const BTN_PRIMARY_BG:   egui::Color32 = egui::Color32::from_rgb(52, 120, 246);
 const BTN_PRIMARY_TEXT: egui::Color32 = egui::Color32::WHITE;
+const ERR_COLOR: egui::Color32 = egui::Color32::from_rgb(220, 60, 60);
 
 /// Render a form field label in a consistent style.
 fn field_label(ui: &mut egui::Ui, text: &str) {
@@ -22,9 +23,25 @@ pub fn render_component(ui: &mut egui::Ui, component: &Component, state: &mut Fo
             render_markdown(ui, content);
         }
 
-        Component::Image { alt, src, .. } => {
-            let label = alt.as_deref().unwrap_or(src.as_str());
-            ui.label(format!("[image: {}]", label));
+        Component::Image { src, alt, .. } => {
+            if !state.image_cache.contains_key(src.as_str()) {
+                let texture = load_image_as_texture(ui.ctx(), src);
+                state.image_cache.insert(src.clone(), texture);
+            }
+            match state.image_cache.get(src.as_str()).and_then(|t| t.as_ref()) {
+                Some(texture) => {
+                    let size = texture.size_vec2();
+                    let tex_id = texture.id();
+                    let max_width = ui.available_width();
+                    let scale = if size.x > max_width { max_width / size.x } else { 1.0 };
+                    let display_size = egui::vec2(size.x * scale, size.y * scale);
+                    ui.add(egui::Image::new(egui::load::SizedTexture::new(tex_id, display_size)));
+                }
+                None => {
+                    let label = alt.as_deref().unwrap_or(src.as_str());
+                    ui.label(egui::RichText::new(format!("[image: {}]", label)).weak());
+                }
+            }
         }
 
         Component::Divider { .. } => {
@@ -37,23 +54,35 @@ pub fn render_component(ui: &mut egui::Ui, component: &Component, state: &mut Fo
             if let Some(lbl) = label { field_label(ui, lbl); }
             let value = state.text_values.entry(id.clone()).or_default();
             let hint = placeholder.as_deref().unwrap_or("");
-            ui.add(
+            let response = ui.add(
                 egui::TextEdit::singleline(value)
                     .hint_text(hint)
                     .desired_width(f32::INFINITY),
             );
+            if response.changed() {
+                state.validation_errors.remove(id.as_str());
+            }
+            if let Some(err) = state.validation_errors.get(id.as_str()) {
+                ui.label(egui::RichText::new(err).color(ERR_COLOR).small());
+            }
         }
 
         Component::Textarea { id, label, placeholder, .. } => {
             if let Some(lbl) = label { field_label(ui, lbl); }
             let value = state.text_values.entry(id.clone()).or_default();
             let hint = placeholder.as_deref().unwrap_or("");
-            ui.add(
+            let response = ui.add(
                 egui::TextEdit::multiline(value)
                     .hint_text(hint)
                     .desired_rows(4)
                     .desired_width(f32::INFINITY),
             );
+            if response.changed() {
+                state.validation_errors.remove(id.as_str());
+            }
+            if let Some(err) = state.validation_errors.get(id.as_str()) {
+                ui.label(egui::RichText::new(err).color(ERR_COLOR).small());
+            }
         }
 
         Component::NumberInput { id, label, min, max, step, .. } => {
@@ -73,22 +102,34 @@ pub fn render_component(ui: &mut egui::Ui, component: &Component, state: &mut Fo
             if let Some(lbl) = label { field_label(ui, lbl); }
             else { field_label(ui, "Date"); }
             let value = state.text_values.entry(id.clone()).or_default();
-            ui.add(
+            let response = ui.add(
                 egui::TextEdit::singleline(value)
                     .hint_text("YYYY-MM-DD")
                     .desired_width(f32::INFINITY),
             );
+            if response.changed() {
+                state.validation_errors.remove(id.as_str());
+            }
+            if let Some(err) = state.validation_errors.get(id.as_str()) {
+                ui.label(egui::RichText::new(err).color(ERR_COLOR).small());
+            }
         }
 
         Component::TimePicker { id, label, .. } => {
             if let Some(lbl) = label { field_label(ui, lbl); }
             else { field_label(ui, "Time"); }
             let value = state.text_values.entry(id.clone()).or_default();
-            ui.add(
+            let response = ui.add(
                 egui::TextEdit::singleline(value)
                     .hint_text("HH:MM")
                     .desired_width(f32::INFINITY),
             );
+            if response.changed() {
+                state.validation_errors.remove(id.as_str());
+            }
+            if let Some(err) = state.validation_errors.get(id.as_str()) {
+                ui.label(egui::RichText::new(err).color(ERR_COLOR).small());
+            }
         }
 
         Component::Dropdown { id, label, options, .. } => {
@@ -105,9 +146,14 @@ pub fn render_component(ui: &mut egui::Ui, component: &Component, state: &mut Fo
                 .width(ui.available_width())
                 .show_ui(ui, |ui| {
                     for opt in options {
-                        ui.selectable_value(value, opt.value.clone(), opt.label.as_str());
+                        if ui.selectable_value(value, opt.value.clone(), opt.label.as_str()).changed() {
+                            state.validation_errors.remove(id.as_str());
+                        }
                     }
                 });
+            if let Some(err) = state.validation_errors.get(id.as_str()) {
+                ui.label(egui::RichText::new(err).color(ERR_COLOR).small());
+            }
         }
 
         Component::Checkbox { id, label, .. } => {
@@ -138,7 +184,12 @@ pub fn render_component(ui: &mut egui::Ui, component: &Component, state: &mut Fo
             if let Some(lbl) = label { field_label(ui, lbl); }
             let value = state.text_values.entry(id.clone()).or_default();
             for opt in options {
-                ui.radio_value(value, opt.value.clone(), opt.label.as_str());
+                if ui.radio_value(value, opt.value.clone(), opt.label.as_str()).changed() {
+                    state.validation_errors.remove(id.as_str());
+                }
+            }
+            if let Some(err) = state.validation_errors.get(id.as_str()) {
+                ui.label(egui::RichText::new(err).color(ERR_COLOR).small());
             }
         }
 
@@ -239,12 +290,18 @@ pub fn render_component(ui: &mut egui::Ui, component: &Component, state: &mut Fo
             if let Some(lbl) = label { field_label(ui, lbl); }
             let value = state.text_values.entry(id.clone()).or_default();
             let hint = placeholder.as_deref().unwrap_or("");
-            ui.add(
+            let response = ui.add(
                 egui::TextEdit::singleline(value)
                     .password(true)
                     .hint_text(hint)
                     .desired_width(f32::INFINITY),
             );
+            if response.changed() {
+                state.validation_errors.remove(id.as_str());
+            }
+            if let Some(err) = state.validation_errors.get(id.as_str()) {
+                ui.label(egui::RichText::new(err).color(ERR_COLOR).small());
+            }
         }
 
         Component::Rating { id, label, max, .. } => {
@@ -327,40 +384,163 @@ fn render_markdown(ui: &mut egui::Ui, content: &str) {
             ui.label(egui::RichText::new(heading).size(20.0).strong());
         } else if let Some(heading) = line.strip_prefix("# ") {
             ui.label(egui::RichText::new(heading).size(24.0).strong());
+        } else if line == "---" || line == "***" || line == "___" {
+            ui.add_space(4.0);
+            ui.separator();
+            ui.add_space(4.0);
         } else if line.is_empty() {
             ui.add_space(4.0);
+        } else if let Some(item) = line.strip_prefix("- ").or_else(|| line.strip_prefix("* ")) {
+            ui.horizontal_wrapped(|ui| {
+                ui.label("•");
+                render_inline_markdown(ui, item);
+            });
+        } else if let Some(rest) = strip_numbered_list(line) {
+            let dot_pos = line.find(". ").unwrap();
+            let num = &line[..dot_pos + 1];
+            ui.horizontal_wrapped(|ui| {
+                ui.label(num);
+                render_inline_markdown(ui, rest);
+            });
         } else {
-            // Render inline bold (**text**)
             render_inline_markdown(ui, line);
         }
     }
 }
 
+fn strip_numbered_list(line: &str) -> Option<&str> {
+    let mut idx = 0;
+    let mut has_digit = false;
+    for ch in line.chars() {
+        if ch.is_ascii_digit() {
+            has_digit = true;
+            idx += ch.len_utf8();
+        } else if ch == '.' && has_digit {
+            idx += ch.len_utf8();
+            if line[idx..].starts_with(' ') {
+                return Some(&line[idx + 1..]);
+            }
+            return None;
+        } else {
+            return None;
+        }
+    }
+    None
+}
+
 fn render_inline_markdown(ui: &mut egui::Ui, line: &str) {
-    // Parse **bold** segments
     ui.horizontal_wrapped(|ui| {
         let mut remaining = line;
         while !remaining.is_empty() {
+            // Try **bold** first
             if let Some(start) = remaining.find("**") {
-                let before = &remaining[..start];
-                if !before.is_empty() {
-                    ui.label(before);
+                if start > 0 {
+                    render_inline_rest(ui, &remaining[..start]);
                 }
                 let after_open = &remaining[start + 2..];
                 if let Some(end) = after_open.find("**") {
-                    let bold_text = &after_open[..end];
-                    ui.label(egui::RichText::new(bold_text).strong());
+                    ui.label(egui::RichText::new(&after_open[..end]).strong());
                     remaining = &after_open[end + 2..];
+                    continue;
                 } else {
-                    // No closing **, render rest as normal
-                    ui.label(after_open);
+                    render_inline_rest(ui, remaining);
                     break;
                 }
-            } else {
-                ui.label(remaining);
-                break;
             }
+            // Try `code`
+            if let Some(start) = remaining.find('`') {
+                if start > 0 {
+                    render_inline_rest(ui, &remaining[..start]);
+                }
+                let after_open = &remaining[start + 1..];
+                if let Some(end) = after_open.find('`') {
+                    ui.label(egui::RichText::new(&after_open[..end]).monospace().size(12.0));
+                    remaining = &after_open[end + 1..];
+                    continue;
+                } else {
+                    render_inline_rest(ui, after_open);
+                    break;
+                }
+            }
+            // Try [link](url)
+            if let Some(bracket_start) = remaining.find('[') {
+                if bracket_start > 0 {
+                    render_inline_rest(ui, &remaining[..bracket_start]);
+                }
+                let after_bracket = &remaining[bracket_start + 1..];
+                if let Some(bracket_end) = after_bracket.find(']') {
+                    let link_text = &after_bracket[..bracket_end];
+                    let after_close = &after_bracket[bracket_end + 1..];
+                    if after_close.starts_with('(') {
+                        if let Some(paren_end) = after_close.find(')') {
+                            ui.label(
+                                egui::RichText::new(link_text)
+                                    .color(egui::Color32::from_rgb(80, 140, 220))
+                                    .underline(),
+                            );
+                            remaining = &after_close[paren_end + 1..];
+                            continue;
+                        }
+                    }
+                }
+                render_inline_rest(ui, "[");
+                remaining = after_bracket;
+                continue;
+            }
+            // Try *italic* or _italic_
+            if let Some((delim, start)) = find_italic_start(remaining) {
+                if start > 0 {
+                    render_inline_rest(ui, &remaining[..start]);
+                }
+                let after_open = &remaining[start + delim.len()..];
+                if let Some(end) = after_open.find(delim) {
+                    ui.label(egui::RichText::new(&after_open[..end]).italics());
+                    remaining = &after_open[end + delim.len()..];
+                    continue;
+                } else {
+                    render_inline_rest(ui, remaining);
+                    break;
+                }
+            }
+            // No special markup found
+            render_inline_rest(ui, remaining);
+            break;
         }
     });
 }
 
+fn find_italic_start(text: &str) -> Option<(&'static str, usize)> {
+    let star_pos = text.find('*').and_then(|i| {
+        if text[i..].starts_with("**") { None } else { Some(i) }
+    });
+    let under_pos = text.find('_');
+    match (star_pos, under_pos) {
+        (Some(s), Some(u)) => if s <= u { Some(("*", s)) } else { Some(("_", u)) },
+        (Some(s), None) => Some(("*", s)),
+        (None, Some(u)) => Some(("_", u)),
+        (None, None) => None,
+    }
+}
+
+fn render_inline_rest(ui: &mut egui::Ui, text: &str) {
+    if !text.is_empty() {
+        ui.label(text);
+    }
+}
+
+fn load_image_as_texture(ctx: &egui::Context, src: &str) -> Option<egui::TextureHandle> {
+    if src.starts_with("http://") || src.starts_with("https://") {
+        return None;
+    }
+    let path = src.strip_prefix("file://").unwrap_or(src);
+    let bytes = std::fs::read(path).ok()?;
+    let img = image::load_from_memory(&bytes).ok()?;
+    let rgba = img.to_rgba8();
+    let (w, h) = rgba.dimensions();
+    let pixels: Vec<egui::Color32> = rgba
+        .pixels()
+        .map(|p| egui::Color32::from_rgba_unmultiplied(p[0], p[1], p[2], p[3]))
+        .collect();
+    let color_image = egui::ColorImage { size: [w as usize, h as usize], pixels };
+    Some(ctx.load_texture(src, color_image, egui::TextureOptions::LINEAR))
+}

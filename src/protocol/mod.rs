@@ -71,6 +71,14 @@ pub enum Component {
         required: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
         default_value: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        min_length: Option<usize>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        max_length: Option<usize>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pattern: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error_message: Option<String>,
     },
     Textarea {
         id: String,
@@ -82,6 +90,14 @@ pub enum Component {
         required: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
         default_value: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        min_length: Option<usize>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        max_length: Option<usize>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pattern: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error_message: Option<String>,
     },
     NumberInput {
         id: String,
@@ -201,6 +217,14 @@ pub enum Component {
         placeholder: Option<String>,
         #[serde(default)]
         required: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        min_length: Option<usize>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        max_length: Option<usize>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pattern: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error_message: Option<String>,
     },
     Rating {
         id: String,

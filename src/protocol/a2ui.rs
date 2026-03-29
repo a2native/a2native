@@ -267,6 +267,10 @@ fn convert(id: &str, comp_map: &HashMap<String, (String, Value)>) -> Option<Comp
                     placeholder: None,
                     required: false,
                     default_value,
+                    min_length: None,
+                    max_length: None,
+                    pattern: None,
+                    error_message: None,
                 })
             } else {
                 Some(Component::TextField {
@@ -275,6 +279,10 @@ fn convert(id: &str, comp_map: &HashMap<String, (String, Value)>) -> Option<Comp
                     placeholder: None,
                     required: false,
                     default_value,
+                    min_length: None,
+                    max_length: None,
+                    pattern: None,
+                    error_message: None,
                 })
             }
         }

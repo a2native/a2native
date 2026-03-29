@@ -27,6 +27,8 @@ pub struct FormState {
     pub bool_values: HashMap<String, bool>,
     pub checkbox_group_values: HashMap<String, Vec<String>>,
     pub result: Option<FormResult>,
+    pub validation_errors: HashMap<String, String>,
+    pub image_cache: HashMap<String, Option<egui::TextureHandle>>,
 }
 
 pub enum FormResult {
@@ -43,6 +45,8 @@ impl FormState {
             bool_values: HashMap::new(),
             checkbox_group_values: HashMap::new(),
             result: None,
+            validation_errors: HashMap::new(),
+            image_cache: HashMap::new(),
         };
         Self::init_from_components(&mut state, &input.components);
         state
@@ -386,6 +390,8 @@ impl A2NApp {
                 if let Some(color) = parse_hex_color(color_str) {
                     visuals.selection.bg_fill = color;
                     visuals.hyperlink_color = color;
+                    visuals.widgets.hovered.bg_fill = color.linear_multiply(0.8);
+                    visuals.widgets.active.bg_fill = color;
                 }
             }
             ctx.set_visuals(visuals);
@@ -502,7 +508,17 @@ impl eframe::App for A2NApp {
         // ── Handle form result set by component interactions ──────────────────
         if self.state.result.is_some() {
             let result = self.state.result.take().unwrap();
-            self.finalize(ctx, result);
+            if matches!(result, FormResult::Submitted) {
+                let errors = validate_form(&self.input.components, &self.state);
+                if !errors.is_empty() {
+                    self.state.validation_errors = errors;
+                } else {
+                    self.state.validation_errors.clear();
+                    self.finalize(ctx, FormResult::Submitted);
+                }
+            } else {
+                self.finalize(ctx, result);
+            }
             return;
         }
 
@@ -687,6 +703,118 @@ pub fn parse_hex_color(hex: &str) -> Option<egui::Color32> {
     }
 }
 
+// ── Validation ────────────────────────────────────────────────────────────────
+
+fn validate_form(
+    components: &[crate::protocol::Component],
+    state: &FormState,
+) -> HashMap<String, String> {
+    let mut errors = HashMap::new();
+    validate_components(components, state, &mut errors);
+    errors
+}
+
+fn validate_components(
+    components: &[crate::protocol::Component],
+    state: &FormState,
+    errors: &mut HashMap<String, String>,
+) {
+    use crate::protocol::Component;
+    for component in components {
+        match component {
+            Component::TextField { id, required, min_length, max_length, pattern, error_message, label, .. }
+            | Component::Textarea { id, required, min_length, max_length, pattern, error_message, label, .. } => {
+                let val = state.text_values.get(id).map(|s| s.as_str()).unwrap_or("");
+                validate_text_field(id, val, *required, *min_length, *max_length, pattern.as_deref(), error_message.as_deref(), label.as_deref(), errors);
+            }
+            Component::Password { id, required, min_length, max_length, pattern, error_message, label, .. } => {
+                let val = state.text_values.get(id).map(|s| s.as_str()).unwrap_or("");
+                validate_text_field(id, val, *required, *min_length, *max_length, pattern.as_deref(), error_message.as_deref(), label.as_deref(), errors);
+            }
+            Component::Dropdown { id, required, label, .. }
+            | Component::RadioGroup { id, required, label, .. } => {
+                if *required {
+                    let val = state.text_values.get(id).map(|s| s.as_str()).unwrap_or("");
+                    if val.is_empty() {
+                        let name = label.as_deref().unwrap_or(id.as_str());
+                        errors.insert(id.clone(), format!("{} is required", name));
+                    }
+                }
+            }
+            Component::DatePicker { id, required, label, .. }
+            | Component::TimePicker { id, required, label, .. } => {
+                if *required {
+                    let val = state.text_values.get(id).map(|s| s.as_str()).unwrap_or("");
+                    if val.is_empty() {
+                        let name = label.as_deref().unwrap_or(id.as_str());
+                        errors.insert(id.clone(), format!("{} is required", name));
+                    }
+                }
+            }
+            Component::Card { children, .. } | Component::Row { children, .. } => {
+                validate_components(children, state, errors);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn validate_text_field(
+    id: &str,
+    val: &str,
+    required: bool,
+    min_length: Option<usize>,
+    max_length: Option<usize>,
+    pattern: Option<&str>,
+    error_message: Option<&str>,
+    label: Option<&str>,
+    errors: &mut HashMap<String, String>,
+) {
+    let name = label.unwrap_or(id);
+    if required && val.is_empty() {
+        errors.insert(
+            id.to_string(),
+            error_message.map(|s| s.to_string())
+                .unwrap_or_else(|| format!("{} is required", name)),
+        );
+        return;
+    }
+    if val.is_empty() {
+        return;
+    }
+    if let Some(min) = min_length {
+        if val.chars().count() < min {
+            errors.insert(
+                id.to_string(),
+                error_message.map(|s| s.to_string())
+                    .unwrap_or_else(|| format!("{} must be at least {} characters", name, min)),
+            );
+            return;
+        }
+    }
+    if let Some(max) = max_length {
+        if val.chars().count() > max {
+            errors.insert(
+                id.to_string(),
+                error_message.map(|s| s.to_string())
+                    .unwrap_or_else(|| format!("{} must be at most {} characters", name, max)),
+            );
+            return;
+        }
+    }
+    if let Some(pat) = pattern {
+        if let Ok(re) = regex::Regex::new(pat) {
+            if !re.is_match(val) {
+                errors.insert(
+                    id.to_string(),
+                    error_message.map(|s| s.to_string())
+                        .unwrap_or_else(|| format!("{} has an invalid format", name)),
+                );
+            }
+        }
+    }
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -731,6 +859,10 @@ mod tests {
             placeholder: None,
             required: false,
             default_value: Some("Alice".to_string()),
+            min_length: None,
+            max_length: None,
+            pattern: None,
+            error_message: None,
         }]);
         let state = FormState::from_input(&input);
         assert_eq!(state.text_values.get("name").map(|s| s.as_str()), Some("Alice"));
@@ -799,6 +931,10 @@ mod tests {
                 placeholder: None,
                 required: false,
                 default_value: None,
+                min_length: None,
+                max_length: None,
+                pattern: None,
+                error_message: None,
             },
             Component::Checkbox { id: "ok".to_string(), label: None, default_value: false },
             Component::NumberInput {
