@@ -15,6 +15,7 @@ jobs:
   # ── Build native binaries on each target platform ────────────────────────────
   build:
     name: Build (${{ matrix.platform }}-${{ matrix.arch }})
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
