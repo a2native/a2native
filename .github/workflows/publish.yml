@@ -99,7 +99,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CARGO_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-      NPM_TOKEN: ${{ secrets.ORG_TOKEN }}
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
     steps:
       - uses: actions/checkout@v4
@@ -169,17 +169,17 @@ jobs:
             npm publish "$dir" --access public
           done
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.ORG_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish main package (@a2native/a2native)
         if: env.NPM_TOKEN != ''
         run: npm publish npm/a2native/ --access public
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.ORG_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Skip npm publish (ORG_TOKEN not set)
+      - name: Skip npm publish (NPM_TOKEN not set)
         if: env.NPM_TOKEN == ''
-        run: echo "ORG_TOKEN secret not configured - skipping npm publish."
+        run: echo "NPM_TOKEN secret not configured - skipping npm publish."
 
       - uses: dtolnay/rust-toolchain@stable
 
