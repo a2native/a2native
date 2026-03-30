@@ -2,17 +2,34 @@
   "name": "@a2native/a2native",
   "version": "0.1.0",
   "description": "Native UI forms for AI agents — A2UI Protocol",
-  "keywords": ["ai", "agent", "ui", "native", "a2ui", "form", "egui"],
+  "keywords": [
+    "ai",
+    "agent",
+    "ui",
+    "native",
+    "a2ui",
+    "form",
+    "egui"
+  ],
   "homepage": "https://a2native.dev",
-  "repository": { "type": "git", "url": "https://github.com/a2native/a2native.git" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/a2native/a2native.git"
+  },
   "license": "Apache-2.0",
-  "bin": { "a2n": "bin/a2n" },
-  "files": ["bin/"],
-  "engines": { "node": ">=14" },
+  "bin": {
+    "a2n": "bin/a2n"
+  },
+  "files": [
+    "bin/"
+  ],
+  "engines": {
+    "node": ">=14"
+  },
   "optionalDependencies": {
-    "@a2native/a2native-win32-x64":    "0.1.0",
-    "@a2native/a2native-darwin-x64":   "0.1.0",
+    "@a2native/a2native-win32-x64": "0.1.0",
+    "@a2native/a2native-darwin-x64": "0.1.0",
     "@a2native/a2native-darwin-arm64": "0.1.0",
-    "@a2native/a2native-linux-x64":    "0.1.0"
+    "@a2native/a2native-linux-x64": "0.1.0"
   }
 }

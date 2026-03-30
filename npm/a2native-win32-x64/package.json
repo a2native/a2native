@@ -2,9 +2,18 @@
   "name": "@a2native/a2native-win32-x64",
   "version": "0.1.0",
   "description": "Windows x64 binary for @a2native/a2native",
-  "repository": { "type": "git", "url": "https://github.com/a2native/a2native.git" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/a2native/a2native.git"
+  },
   "license": "Apache-2.0",
-  "os": ["win32"],
-  "cpu": ["x64"],
-  "files": ["bin/"]
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "bin/"
+  ]
 }
