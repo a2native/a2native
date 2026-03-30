@@ -533,6 +533,15 @@ fn load_image_as_texture(ctx: &egui::Context, src: &str) -> Option<egui::Texture
         return None;
     }
     let path = src.strip_prefix("file://").unwrap_or(src);
+    // Reject absolute paths and any path traversal components (e.g. "..").
+    // Images must be relative paths within the working directory.
+    let p = std::path::Path::new(path);
+    if p.is_absolute() {
+        return None;
+    }
+    if p.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+        return None;
+    }
     let bytes = std::fs::read(path).ok()?;
     let img = image::load_from_memory(&bytes).ok()?;
     let rgba = img.to_rgba8();

@@ -30,6 +30,10 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 use std::sync::mpsc::Sender;
 
+/// Maximum accepted request body size (1 MB). Prevents memory exhaustion via a
+/// malicious Content-Length header.
+const MAX_BODY_BYTES: usize = 1024 * 1024;
+
 use crate::protocol::A2NOutput;
 use crate::renderer::egui_impl::IpcCommand;
 
@@ -89,15 +93,16 @@ fn handle_sse_conn(stream: std::net::TcpStream, tx: Sender<IpcCommand>) {
     let mut stream = stream;
 
     match (method.as_str(), path.as_str()) {
-        ("OPTIONS", "/form") => {
-            let _ = stream.write_all(
-                b"HTTP/1.1 204 No Content\r\n\
-                  Access-Control-Allow-Origin: *\r\n\
-                  Access-Control-Allow-Methods: POST, OPTIONS\r\n\
-                  Access-Control-Allow-Headers: Content-Type\r\n\r\n",
-            );
-        }
         ("POST", "/form") => {
+            // Reject oversized bodies before allocating (prevents memory exhaustion).
+            if content_length > MAX_BODY_BYTES {
+                let _ = stream.write_all(
+                    b"HTTP/1.1 413 Content Too Large\r\n\
+                      Content-Type: text/plain\r\n\r\n\
+                      Request body exceeds 1 MB limit",
+                );
+                return;
+            }
             // Read body
             let mut body = vec![0u8; content_length];
             if std::io::Read::read_exact(&mut reader, &mut body).is_err() {
@@ -110,8 +115,7 @@ fn handle_sse_conn(stream: std::net::TcpStream, tx: Sender<IpcCommand>) {
                 Err(e) => {
                     let msg = format!(
                         "HTTP/1.1 400 Bad Request\r\n\
-                         Content-Type: text/plain\r\n\
-                         Access-Control-Allow-Origin: *\r\n\r\n{e}"
+                         Content-Type: text/plain\r\n\r\n{e}"
                     );
                     let _ = stream.write_all(msg.as_bytes());
                     return;
@@ -121,8 +125,7 @@ fn handle_sse_conn(stream: std::net::TcpStream, tx: Sender<IpcCommand>) {
             let (resp_tx, resp_rx) = std::sync::mpsc::sync_channel::<A2NOutput>(0);
             if tx.send(IpcCommand::Update { input, response_tx: resp_tx }).is_err() {
                 let _ = stream.write_all(
-                    b"HTTP/1.1 503 Service Unavailable\r\n\
-                      Access-Control-Allow-Origin: *\r\n\r\n",
+                    b"HTTP/1.1 503 Service Unavailable\r\n\r\n",
                 );
                 return;
             }
@@ -132,8 +135,7 @@ fn handle_sse_conn(stream: std::net::TcpStream, tx: Sender<IpcCommand>) {
                 b"HTTP/1.1 200 OK\r\n\
                   Content-Type: text/event-stream\r\n\
                   Cache-Control: no-cache\r\n\
-                  Connection: keep-alive\r\n\
-                  Access-Control-Allow-Origin: *\r\n\r\n",
+                  Connection: keep-alive\r\n\r\n",
             );
 
             // Acknowledge: form is now displayed
@@ -149,8 +151,7 @@ fn handle_sse_conn(stream: std::net::TcpStream, tx: Sender<IpcCommand>) {
         ("GET", "/health") => {
             let _ = stream.write_all(
                 b"HTTP/1.1 200 OK\r\n\
-                  Content-Type: application/json\r\n\
-                  Access-Control-Allow-Origin: *\r\n\r\n\
+                  Content-Type: application/json\r\n\r\n\
                   {\"status\":\"ok\"}",
             );
         }

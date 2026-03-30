@@ -25,7 +25,14 @@ fn safe_uuid_component(uuid: &str) -> String {
         .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
         .take(64)
         .collect();
-    if s.is_empty() { "default".to_string() } else { s }
+    if s.is_empty() {
+        // Derive a stable hex digest so different invalid inputs don't collide
+        // on the same port file (e.g. "" and "!!!" must not both become "default").
+        let hash = uuid.bytes().fold(0u64, |h, b| h.wrapping_mul(31).wrapping_add(b as u64));
+        format!("inv-{hash:016x}")
+    } else {
+        s
+    }
 }
 
 fn port_file(uuid: &str) -> PathBuf {
