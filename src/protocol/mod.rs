@@ -250,7 +250,184 @@ pub enum Component {
         #[serde(skip_serializing_if = "Option::is_none")]
         language: Option<String>,
     },
+
+    // ── Extended input (v0.2) ────────────────────────────────────────────────
+    /// Email input — a text-field that validates as an email address on submit.
+    Email {
+        id: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        placeholder: Option<String>,
+        #[serde(default)]
+        required: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        default_value: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error_message: Option<String>,
+    },
+    /// URL input — a text-field that validates as an http(s)/ftp URL on submit.
+    Url {
+        id: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        placeholder: Option<String>,
+        #[serde(default)]
+        required: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        default_value: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error_message: Option<String>,
+    },
+    /// Hidden field — never rendered. `value` is passed through verbatim to output.
+    /// Useful for round-tripping opaque context (request ids, correlation tokens).
+    Hidden {
+        id: String,
+        value: serde_json::Value,
+    },
+    /// Combined date + time picker. Output is a single string "YYYY-MM-DD HH:MM".
+    DatetimePicker {
+        id: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
+        #[serde(default)]
+        required: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        default_value: Option<String>,
+    },
+    /// Date range — two date fields. Output is `{ "start": "...", "end": "..." }`.
+    DateRange {
+        id: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
+        #[serde(default)]
+        required: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        default_start: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        default_end: Option<String>,
+    },
+    /// Color picker — output is a hex color string "#RRGGBB".
+    ColorPicker {
+        id: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        default_value: Option<String>,
+    },
+    /// Dual-handle range slider. Output is `{ "min": number, "max": number }`.
+    RangeSlider {
+        id: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
+        #[serde(default = "default_slider_min")]
+        min: f64,
+        #[serde(default = "default_slider_max")]
+        max: f64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        step: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        default_min: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        default_max: Option<f64>,
+    },
+    /// Multi-select dropdown — pick many from a list. Output is a string array.
+    MultiSelect {
+        id: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
+        options: Vec<SelectOption>,
+        #[serde(default)]
+        default_values: Vec<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        placeholder: Option<String>,
+    },
+    /// Combobox — free-text input with a dropdown of suggestions. Output is a single string.
+    Combobox {
+        id: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        placeholder: Option<String>,
+        #[serde(default)]
+        options: Vec<SelectOption>,
+        #[serde(default)]
+        required: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        default_value: Option<String>,
+    },
+    /// Free-form tag input — user types a word, presses Enter/comma, it becomes a chip.
+    /// Output is a string array.
+    Tags {
+        id: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        placeholder: Option<String>,
+        #[serde(default)]
+        default_values: Vec<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        max: Option<usize>,
+    },
+
+    // ── Extended display (v0.2) ──────────────────────────────────────────────
+    /// Alert / callout block with a severity color. No output.
+    Alert {
+        id: String,
+        #[serde(default)]
+        kind: AlertKind,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+        content: String,
+    },
+    /// Clickable external link (opens in the system browser). No output.
+    Link {
+        id: String,
+        label: String,
+        url: String,
+    },
+    /// Read-only progress bar. `value` in `[0, max]`; `max` defaults to 1.0. No output.
+    Progress {
+        id: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
+        value: f64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        max: Option<f64>,
+        #[serde(default)]
+        show_percent: bool,
+    },
+
+    // ── Extended layout (v0.2) ───────────────────────────────────────────────
+    /// Collapsible section — user can expand/collapse.
+    Collapsible {
+        id: String,
+        title: String,
+        #[serde(default = "default_true")]
+        open: bool,
+        children: Vec<Component>,
+    },
+    /// Explicit vertical space.
+    Spacer {
+        id: String,
+        #[serde(default = "default_spacer_size")]
+        size: f32,
+    },
 }
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum AlertKind {
+    #[default]
+    Info,
+    Success,
+    Warning,
+    Error,
+}
+
+fn default_true() -> bool { true }
+fn default_spacer_size() -> f32 { 8.0 }
 
 fn default_slider_min() -> f64 {
     0.0
@@ -459,11 +636,139 @@ mod tests {
                 {"id":"t19","type":"password"},
                 {"id":"t20","type":"rating"},
                 {"id":"t21","type":"toggle"},
-                {"id":"t22","type":"code","content":"fn main() {}"}
+                {"id":"t22","type":"code","content":"fn main() {}"},
+                {"id":"t23","type":"email"},
+                {"id":"t24","type":"url"},
+                {"id":"t25","type":"hidden","value":"ctx-42"},
+                {"id":"t26","type":"datetime-picker"},
+                {"id":"t27","type":"date-range"},
+                {"id":"t28","type":"color-picker"},
+                {"id":"t29","type":"range-slider"},
+                {"id":"t30","type":"multi-select","options":[]},
+                {"id":"t31","type":"combobox"},
+                {"id":"t32","type":"tags"},
+                {"id":"t33","type":"alert","content":"heads up"},
+                {"id":"t34","type":"link","label":"docs","url":"https://example.com"},
+                {"id":"t35","type":"progress","value":0.5},
+                {"id":"t36","type":"collapsible","title":"More","children":[]},
+                {"id":"t37","type":"spacer"}
             ]
         }"#;
         let input: A2NInput = serde_json::from_str(json).unwrap();
-        assert_eq!(input.components.len(), 22);
+        assert_eq!(input.components.len(), 37);
+    }
+
+    #[test]
+    fn test_parse_email() {
+        let json = r#"{"components":[{"id":"e","type":"email","label":"Email","required":true}]}"#;
+        let input: A2NInput = serde_json::from_str(json).unwrap();
+        match &input.components[0] {
+            Component::Email { id, label, required, .. } => {
+                assert_eq!(id, "e");
+                assert_eq!(label.as_deref(), Some("Email"));
+                assert!(*required);
+            }
+            _ => panic!("Expected Email"),
+        }
+    }
+
+    #[test]
+    fn test_parse_hidden_passthrough() {
+        let json = r#"{"components":[{"id":"ctx","type":"hidden","value":{"trace":"abc","n":7}}]}"#;
+        let input: A2NInput = serde_json::from_str(json).unwrap();
+        match &input.components[0] {
+            Component::Hidden { id, value } => {
+                assert_eq!(id, "ctx");
+                assert_eq!(value["trace"], "abc");
+                assert_eq!(value["n"], 7);
+            }
+            _ => panic!("Expected Hidden"),
+        }
+    }
+
+    #[test]
+    fn test_parse_date_range() {
+        let json = r#"{"components":[{"id":"r","type":"date-range","default_start":"2026-01-01","default_end":"2026-12-31"}]}"#;
+        let input: A2NInput = serde_json::from_str(json).unwrap();
+        match &input.components[0] {
+            Component::DateRange { default_start, default_end, .. } => {
+                assert_eq!(default_start.as_deref(), Some("2026-01-01"));
+                assert_eq!(default_end.as_deref(), Some("2026-12-31"));
+            }
+            _ => panic!("Expected DateRange"),
+        }
+    }
+
+    #[test]
+    fn test_parse_range_slider_defaults() {
+        let json = r#"{"components":[{"id":"r","type":"range-slider"}]}"#;
+        let input: A2NInput = serde_json::from_str(json).unwrap();
+        match &input.components[0] {
+            Component::RangeSlider { min, max, .. } => {
+                assert_eq!(*min, 0.0);
+                assert_eq!(*max, 100.0);
+            }
+            _ => panic!("Expected RangeSlider"),
+        }
+    }
+
+    #[test]
+    fn test_parse_multi_select() {
+        let json = r#"{"components":[{
+            "id":"m","type":"multi-select",
+            "options":[{"value":"a","label":"A"},{"value":"b","label":"B"}],
+            "default_values":["a"]
+        }]}"#;
+        let input: A2NInput = serde_json::from_str(json).unwrap();
+        match &input.components[0] {
+            Component::MultiSelect { options, default_values, .. } => {
+                assert_eq!(options.len(), 2);
+                assert_eq!(default_values, &vec!["a".to_string()]);
+            }
+            _ => panic!("Expected MultiSelect"),
+        }
+    }
+
+    #[test]
+    fn test_parse_alert_kinds() {
+        for (k, expected) in [
+            ("info", AlertKind::Info),
+            ("success", AlertKind::Success),
+            ("warning", AlertKind::Warning),
+            ("error", AlertKind::Error),
+        ] {
+            let json = format!(
+                r#"{{"components":[{{"id":"a","type":"alert","kind":"{}","content":"x"}}]}}"#,
+                k
+            );
+            let input: A2NInput = serde_json::from_str(&json).unwrap();
+            match &input.components[0] {
+                Component::Alert { kind, .. } => assert_eq!(*kind, expected),
+                _ => panic!("Expected Alert"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_collapsible_default_open() {
+        let json = r#"{"components":[{"id":"c","type":"collapsible","title":"More","children":[]}]}"#;
+        let input: A2NInput = serde_json::from_str(json).unwrap();
+        match &input.components[0] {
+            Component::Collapsible { open, .. } => assert!(*open),
+            _ => panic!("Expected Collapsible"),
+        }
+    }
+
+    #[test]
+    fn test_parse_tags() {
+        let json = r#"{"components":[{"id":"t","type":"tags","default_values":["rust","cli"]}]}"#;
+        let input: A2NInput = serde_json::from_str(json).unwrap();
+        match &input.components[0] {
+            Component::Tags { default_values, .. } => {
+                assert_eq!(default_values, &vec!["rust".to_string(), "cli".to_string()]);
+            }
+            _ => panic!("Expected Tags"),
+        }
     }
 
     #[test]

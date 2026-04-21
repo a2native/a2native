@@ -1,6 +1,6 @@
 use eframe::egui;
 
-use crate::protocol::{ButtonAction, Component};
+use crate::protocol::{AlertKind, ButtonAction, Component};
 use crate::renderer::egui_impl::{FormResult, FormState};
 
 const BTN_PRIMARY_BG:   egui::Color32 = egui::Color32::from_rgb(52, 120, 246);
@@ -373,7 +373,336 @@ pub fn render_component(ui: &mut egui::Ui, component: &Component, state: &mut Fo
                 );
             });
         }
+
+        // ── v0.2 additions ───────────────────────────────────────────────────
+        Component::Email { id, label, placeholder, .. } => {
+            if let Some(lbl) = label { field_label(ui, lbl); }
+            let value = state.text_values.entry(id.clone()).or_default();
+            let hint = placeholder.as_deref().unwrap_or("you@example.com");
+            let resp = ui.add(
+                egui::TextEdit::singleline(value)
+                    .hint_text(hint)
+                    .desired_width(f32::INFINITY),
+            );
+            if resp.changed() { state.validation_errors.remove(id.as_str()); }
+            if let Some(err) = state.validation_errors.get(id.as_str()) {
+                ui.label(egui::RichText::new(err).color(ERR_COLOR).small());
+            }
+        }
+
+        Component::Url { id, label, placeholder, .. } => {
+            if let Some(lbl) = label { field_label(ui, lbl); }
+            let value = state.text_values.entry(id.clone()).or_default();
+            let hint = placeholder.as_deref().unwrap_or("https://…");
+            let resp = ui.add(
+                egui::TextEdit::singleline(value)
+                    .hint_text(hint)
+                    .desired_width(f32::INFINITY),
+            );
+            if resp.changed() { state.validation_errors.remove(id.as_str()); }
+            if let Some(err) = state.validation_errors.get(id.as_str()) {
+                ui.label(egui::RichText::new(err).color(ERR_COLOR).small());
+            }
+        }
+
+        Component::Hidden { .. } => {
+            // Intentionally not rendered — value is passed through to output.
+        }
+
+        Component::DatetimePicker { id, label, .. } => {
+            if let Some(lbl) = label { field_label(ui, lbl); }
+            let (date, time) = state
+                .pair_text_values
+                .entry(id.clone())
+                .or_insert_with(|| (String::new(), String::new()));
+            let mut changed = false;
+            ui.horizontal(|ui| {
+                let r1 = ui.add(
+                    egui::TextEdit::singleline(date)
+                        .hint_text("YYYY-MM-DD")
+                        .desired_width(140.0),
+                );
+                let r2 = ui.add(
+                    egui::TextEdit::singleline(time)
+                        .hint_text("HH:MM")
+                        .desired_width(80.0),
+                );
+                changed = r1.changed() || r2.changed();
+            });
+            if changed { state.validation_errors.remove(id.as_str()); }
+            if let Some(err) = state.validation_errors.get(id.as_str()) {
+                ui.label(egui::RichText::new(err).color(ERR_COLOR).small());
+            }
+        }
+
+        Component::DateRange { id, label, .. } => {
+            if let Some(lbl) = label { field_label(ui, lbl); }
+            let (start, end) = state
+                .pair_text_values
+                .entry(id.clone())
+                .or_insert_with(|| (String::new(), String::new()));
+            let mut changed = false;
+            ui.horizontal(|ui| {
+                let r1 = ui.add(
+                    egui::TextEdit::singleline(start)
+                        .hint_text("Start YYYY-MM-DD")
+                        .desired_width(140.0),
+                );
+                ui.label("→");
+                let r2 = ui.add(
+                    egui::TextEdit::singleline(end)
+                        .hint_text("End YYYY-MM-DD")
+                        .desired_width(140.0),
+                );
+                changed = r1.changed() || r2.changed();
+            });
+            if changed { state.validation_errors.remove(id.as_str()); }
+            if let Some(err) = state.validation_errors.get(id.as_str()) {
+                ui.label(egui::RichText::new(err).color(ERR_COLOR).small());
+            }
+        }
+
+        Component::ColorPicker { id, label, .. } => {
+            if let Some(lbl) = label { field_label(ui, lbl); }
+            let hex = state
+                .text_values
+                .entry(id.clone())
+                .or_insert_with(|| "#6C63FF".to_string());
+            let mut rgb = hex_to_rgb(hex.as_str()).unwrap_or([108, 99, 255]);
+            ui.horizontal(|ui| {
+                if ui.color_edit_button_srgb(&mut rgb).changed() {
+                    *hex = format!("#{:02X}{:02X}{:02X}", rgb[0], rgb[1], rgb[2]);
+                }
+                ui.label(egui::RichText::new(hex.as_str()).monospace().small());
+            });
+        }
+
+        Component::RangeSlider { id, label, min, max, step, .. } => {
+            if let Some(lbl) = label { field_label(ui, lbl); }
+            let (lo, hi) = state
+                .pair_number_values
+                .entry(id.clone())
+                .or_insert((*min, *max));
+            ui.horizontal(|ui| {
+                let mut s_lo = egui::Slider::new(lo, *min..=*max).show_value(true).text("min");
+                let mut s_hi = egui::Slider::new(hi, *min..=*max).show_value(true).text("max");
+                if let Some(sp) = step {
+                    s_lo = s_lo.step_by(*sp);
+                    s_hi = s_hi.step_by(*sp);
+                }
+                ui.add(s_lo);
+                ui.add(s_hi);
+            });
+            // Keep lo ≤ hi.
+            if *lo > *hi { std::mem::swap(lo, hi); }
+        }
+
+        Component::MultiSelect { id, label, options, placeholder, .. } => {
+            if let Some(lbl) = label { field_label(ui, lbl); }
+            let selected = state.checkbox_group_values.entry(id.clone()).or_default();
+            let summary = if selected.is_empty() {
+                placeholder.clone().unwrap_or_else(|| "-- Select --".to_string())
+            } else {
+                let labels: Vec<&str> = options
+                    .iter()
+                    .filter(|o| selected.contains(&o.value))
+                    .map(|o| o.label.as_str())
+                    .collect();
+                if labels.len() <= 3 {
+                    labels.join(", ")
+                } else {
+                    format!("{} selected", labels.len())
+                }
+            };
+            egui::ComboBox::from_id_salt(id.as_str())
+                .selected_text(summary)
+                .width(ui.available_width())
+                .show_ui(ui, |ui| {
+                    for opt in options {
+                        let mut checked = selected.contains(&opt.value);
+                        if ui.checkbox(&mut checked, opt.label.as_str()).changed() {
+                            if checked {
+                                if !selected.contains(&opt.value) {
+                                    selected.push(opt.value.clone());
+                                }
+                            } else {
+                                selected.retain(|v| v != &opt.value);
+                            }
+                        }
+                    }
+                });
+        }
+
+        Component::Combobox { id, label, placeholder, options, .. } => {
+            if let Some(lbl) = label { field_label(ui, lbl); }
+            let value = state.text_values.entry(id.clone()).or_default();
+            ui.horizontal(|ui| {
+                let hint = placeholder.as_deref().unwrap_or("");
+                let resp = ui.add(
+                    egui::TextEdit::singleline(value)
+                        .hint_text(hint)
+                        .desired_width(ui.available_width() - 30.0),
+                );
+                if resp.changed() { state.validation_errors.remove(id.as_str()); }
+                egui::ComboBox::from_id_salt(format!("{}__suggest", id))
+                    .selected_text("▾")
+                    .width(28.0)
+                    .show_ui(ui, |ui| {
+                        for opt in options {
+                            if ui
+                                .selectable_label(*value == opt.value, opt.label.as_str())
+                                .clicked()
+                            {
+                                *value = opt.value.clone();
+                                state.validation_errors.remove(id.as_str());
+                                ui.close_menu();
+                            }
+                        }
+                    });
+            });
+            if let Some(err) = state.validation_errors.get(id.as_str()) {
+                ui.label(egui::RichText::new(err).color(ERR_COLOR).small());
+            }
+        }
+
+        Component::Tags { id, label, placeholder, max, .. } => {
+            if let Some(lbl) = label { field_label(ui, lbl); }
+            let tags = state.checkbox_group_values.entry(id.clone()).or_default();
+            // Chips row
+            let mut remove_idx: Option<usize> = None;
+            ui.horizontal_wrapped(|ui| {
+                for (i, tag) in tags.iter().enumerate() {
+                    let chip = egui::Frame {
+                        fill: egui::Color32::from_rgb(52, 120, 246).linear_multiply(0.2),
+                        inner_margin: egui::Margin::symmetric(8.0, 3.0),
+                        rounding: egui::Rounding::same(10.0),
+                        ..Default::default()
+                    };
+                    chip.show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new(tag).small());
+                            if ui
+                                .add(egui::Label::new(
+                                    egui::RichText::new("×").small().color(egui::Color32::GRAY),
+                                ).sense(egui::Sense::click()))
+                                .clicked()
+                            {
+                                remove_idx = Some(i);
+                            }
+                        });
+                    });
+                }
+            });
+            if let Some(i) = remove_idx { tags.remove(i); }
+
+            // Input buffer — Enter or comma commits.
+            let buffer = state.tags_input_buffer.entry(id.clone()).or_default();
+            let hint = placeholder.as_deref().unwrap_or("Type a tag, press Enter…");
+            let resp = ui.add(
+                egui::TextEdit::singleline(buffer)
+                    .hint_text(hint)
+                    .desired_width(f32::INFINITY),
+            );
+            let enter = resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            let has_comma = buffer.contains(',');
+            if enter || has_comma {
+                // Split on commas to support bulk paste.
+                let pieces: Vec<String> = buffer
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                for p in pieces {
+                    if let Some(limit) = max {
+                        if tags.len() >= *limit { break; }
+                    }
+                    if !tags.contains(&p) {
+                        tags.push(p);
+                    }
+                }
+                buffer.clear();
+                if enter { resp.request_focus(); }
+            }
+        }
+
+        Component::Alert { kind, title, content, .. } => {
+            let (bg, border, icon) = match kind {
+                AlertKind::Info    => (egui::Color32::from_rgb(220, 235, 255), egui::Color32::from_rgb(70, 130, 220),  "ℹ"),
+                AlertKind::Success => (egui::Color32::from_rgb(220, 245, 225), egui::Color32::from_rgb(55, 160, 90),   "✔"),
+                AlertKind::Warning => (egui::Color32::from_rgb(255, 245, 210), egui::Color32::from_rgb(210, 150, 40),  "⚠"),
+                AlertKind::Error   => (egui::Color32::from_rgb(255, 225, 225), egui::Color32::from_rgb(210, 70, 70),   "✖"),
+            };
+            let frame = egui::Frame {
+                fill: bg,
+                inner_margin: egui::Margin::symmetric(10.0, 8.0),
+                rounding: egui::Rounding::same(6.0),
+                stroke: egui::Stroke::new(1.0, border),
+                ..Default::default()
+            };
+            frame.show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new(icon).color(border).size(16.0));
+                    ui.vertical(|ui| {
+                        if let Some(t) = title {
+                            ui.label(
+                                egui::RichText::new(t)
+                                    .strong()
+                                    .color(egui::Color32::from_gray(20)),
+                            );
+                        }
+                        ui.label(
+                            egui::RichText::new(content.as_str())
+                                .color(egui::Color32::from_gray(30)),
+                        );
+                    });
+                });
+            });
+        }
+
+        Component::Link { label, url, .. } => {
+            ui.hyperlink_to(label.as_str(), url.as_str());
+        }
+
+        Component::Progress { label, value, max, show_percent, .. } => {
+            if let Some(lbl) = label { field_label(ui, lbl); }
+            let m = max.unwrap_or(1.0).max(f64::EPSILON);
+            let frac = (*value / m).clamp(0.0, 1.0) as f32;
+            let text = if *show_percent {
+                format!("{:.0}%", frac * 100.0)
+            } else {
+                format!("{:.0} / {:.0}", value, m)
+            };
+            ui.add(egui::ProgressBar::new(frac).text(text));
+        }
+
+        Component::Collapsible { id, title, open, children } => {
+            let initial = *state.collapsible_open.entry(id.clone()).or_insert(*open);
+            let resp = egui::CollapsingHeader::new(title.as_str())
+                .id_salt(id.as_str())
+                .default_open(initial)
+                .show(ui, |ui| {
+                    for child in children {
+                        render_component(ui, child, state);
+                        ui.add_space(4.0);
+                    }
+                });
+            state.collapsible_open.insert(id.clone(), resp.fully_open());
+        }
+
+        Component::Spacer { size, .. } => {
+            ui.add_space(*size);
+        }
     }
+}
+
+fn hex_to_rgb(hex: &str) -> Option<[u8; 3]> {
+    let hex = hex.trim_start_matches('#');
+    if hex.len() != 6 { return None; }
+    Some([
+        u8::from_str_radix(&hex[0..2], 16).ok()?,
+        u8::from_str_radix(&hex[2..4], 16).ok()?,
+        u8::from_str_radix(&hex[4..6], 16).ok()?,
+    ])
 }
 
 fn render_markdown(ui: &mut egui::Ui, content: &str) {

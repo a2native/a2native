@@ -26,6 +26,16 @@ pub struct FormState {
     pub number_values: HashMap<String, f64>,
     pub bool_values: HashMap<String, bool>,
     pub checkbox_group_values: HashMap<String, Vec<String>>,
+    /// `(min, max)` state for range-slider components.
+    pub pair_number_values: HashMap<String, (f64, f64)>,
+    /// `(a, b)` text state for date-range (start, end) and datetime-picker (date, time).
+    pub pair_text_values: HashMap<String, (String, String)>,
+    /// Hidden-field passthrough values. Serialized verbatim to the output.
+    pub hidden_values: HashMap<String, serde_json::Value>,
+    /// Expanded/collapsed state for collapsible containers, keyed by component id.
+    pub collapsible_open: HashMap<String, bool>,
+    /// Transient text buffer for the "type to add a tag" box.
+    pub tags_input_buffer: HashMap<String, String>,
     pub result: Option<FormResult>,
     pub validation_errors: HashMap<String, String>,
     pub image_cache: HashMap<String, Option<egui::TextureHandle>>,
@@ -44,6 +54,11 @@ impl FormState {
             number_values: HashMap::new(),
             bool_values: HashMap::new(),
             checkbox_group_values: HashMap::new(),
+            pair_number_values: HashMap::new(),
+            pair_text_values: HashMap::new(),
+            hidden_values: HashMap::new(),
+            collapsible_open: HashMap::new(),
+            tags_input_buffer: HashMap::new(),
             result: None,
             validation_errors: HashMap::new(),
             image_cache: HashMap::new(),
@@ -98,6 +113,59 @@ impl FormState {
                     state.bool_values.insert(id.clone(), *default_value);
                 }
                 Component::Card { children, .. } | Component::Row { children, .. } => {
+                    Self::init_from_components(state, children);
+                }
+
+                // ── v0.2 additions ─────────────────────────────────────────────
+                Component::Email { id, default_value, .. }
+                | Component::Url { id, default_value, .. }
+                | Component::DatetimePicker { id, default_value, .. }
+                | Component::Combobox { id, default_value, .. } => {
+                    // Combobox/Datetime store text in pair_text for split edits,
+                    // but we also keep a canonical text_values entry where it helps.
+                    match component {
+                        Component::DatetimePicker { .. } => {
+                            // Split default "YYYY-MM-DD HH:MM" into (date, time).
+                            let (d, t) = split_datetime(default_value.as_deref().unwrap_or(""));
+                            state.pair_text_values.insert(id.clone(), (d, t));
+                        }
+                        _ => {
+                            state.text_values.insert(
+                                id.clone(),
+                                default_value.clone().unwrap_or_default(),
+                            );
+                        }
+                    }
+                }
+                Component::Hidden { id, value } => {
+                    state.hidden_values.insert(id.clone(), value.clone());
+                }
+                Component::DateRange { id, default_start, default_end, .. } => {
+                    state.pair_text_values.insert(
+                        id.clone(),
+                        (
+                            default_start.clone().unwrap_or_default(),
+                            default_end.clone().unwrap_or_default(),
+                        ),
+                    );
+                }
+                Component::ColorPicker { id, default_value, .. } => {
+                    state.text_values.insert(
+                        id.clone(),
+                        default_value.clone().unwrap_or_else(|| "#6C63FF".to_string()),
+                    );
+                }
+                Component::RangeSlider { id, min, max, default_min, default_max, .. } => {
+                    let lo = default_min.unwrap_or(*min);
+                    let hi = default_max.unwrap_or(*max);
+                    state.pair_number_values.insert(id.clone(), (lo, hi));
+                }
+                Component::MultiSelect { id, default_values, .. }
+                | Component::Tags { id, default_values, .. } => {
+                    state.checkbox_group_values.insert(id.clone(), default_values.clone());
+                }
+                Component::Collapsible { id, open, children, .. } => {
+                    state.collapsible_open.insert(id.clone(), *open);
                     Self::init_from_components(state, children);
                 }
                 _ => {}
@@ -161,9 +229,75 @@ impl FormState {
                 Component::Card { children, .. } | Component::Row { children, .. } => {
                     self.collect_from_components(values, children);
                 }
+
+                // ── v0.2 additions ─────────────────────────────────────────────
+                Component::Email { id, .. }
+                | Component::Url { id, .. }
+                | Component::ColorPicker { id, .. }
+                | Component::Combobox { id, .. } => {
+                    if let Some(v) = self.text_values.get(id) {
+                        values.insert(id.clone(), serde_json::Value::String(v.clone()));
+                    }
+                }
+                Component::Hidden { id, .. } => {
+                    if let Some(v) = self.hidden_values.get(id) {
+                        values.insert(id.clone(), v.clone());
+                    }
+                }
+                Component::DatetimePicker { id, .. } => {
+                    if let Some((d, t)) = self.pair_text_values.get(id) {
+                        let joined = match (d.is_empty(), t.is_empty()) {
+                            (true, true) => String::new(),
+                            (false, true) => d.clone(),
+                            (true, false) => t.clone(),
+                            (false, false) => format!("{} {}", d, t),
+                        };
+                        values.insert(id.clone(), serde_json::Value::String(joined));
+                    }
+                }
+                Component::DateRange { id, .. } => {
+                    if let Some((s, e)) = self.pair_text_values.get(id) {
+                        values.insert(
+                            id.clone(),
+                            serde_json::json!({ "start": s, "end": e }),
+                        );
+                    }
+                }
+                Component::RangeSlider { id, .. } => {
+                    if let Some((lo, hi)) = self.pair_number_values.get(id) {
+                        values.insert(
+                            id.clone(),
+                            serde_json::json!({ "min": lo, "max": hi }),
+                        );
+                    }
+                }
+                Component::MultiSelect { id, .. } | Component::Tags { id, .. } => {
+                    if let Some(v) = self.checkbox_group_values.get(id) {
+                        values.insert(
+                            id.clone(),
+                            serde_json::Value::Array(
+                                v.iter().map(|s| serde_json::Value::String(s.clone())).collect(),
+                            ),
+                        );
+                    }
+                }
+                Component::Collapsible { children, .. } => {
+                    self.collect_from_components(values, children);
+                }
                 _ => {}
             }
         }
+    }
+}
+
+/// Split a "YYYY-MM-DD HH:MM" string into (date, time). Tolerant of partials.
+pub(crate) fn split_datetime(s: &str) -> (String, String) {
+    let s = s.trim();
+    if s.is_empty() { return (String::new(), String::new()); }
+    if let Some((d, t)) = s.split_once(' ').or_else(|| s.split_once('T')) {
+        (d.to_string(), t.to_string())
+    } else {
+        (s.to_string(), String::new())
     }
 }
 
@@ -370,7 +504,9 @@ impl A2NApp {
         for c in components {
             match c {
                 Component::Button { action, .. } if *action == ButtonAction::Submit => return true,
-                Component::Card { children, .. } | Component::Row { children, .. } => {
+                Component::Card { children, .. }
+                | Component::Row { children, .. }
+                | Component::Collapsible { children, .. } => {
                     if Self::check_has_submit(children) { return true; }
                 }
                 _ => {}
@@ -751,12 +887,97 @@ fn validate_components(
                     }
                 }
             }
-            Component::Card { children, .. } | Component::Row { children, .. } => {
+            Component::Card { children, .. }
+            | Component::Row { children, .. }
+            | Component::Collapsible { children, .. } => {
                 validate_components(children, state, errors);
+            }
+
+            // ── v0.2 additions ─────────────────────────────────────────────────
+            Component::Email { id, required, error_message, label, .. } => {
+                let val = state.text_values.get(id).map(|s| s.as_str()).unwrap_or("");
+                let name = label.as_deref().unwrap_or(id.as_str());
+                if *required && val.is_empty() {
+                    errors.insert(
+                        id.clone(),
+                        error_message.clone().unwrap_or_else(|| format!("{} is required", name)),
+                    );
+                } else if !val.is_empty() && !is_valid_email(val) {
+                    errors.insert(
+                        id.clone(),
+                        error_message.clone().unwrap_or_else(|| format!("{} is not a valid email", name)),
+                    );
+                }
+            }
+            Component::Url { id, required, error_message, label, .. } => {
+                let val = state.text_values.get(id).map(|s| s.as_str()).unwrap_or("");
+                let name = label.as_deref().unwrap_or(id.as_str());
+                if *required && val.is_empty() {
+                    errors.insert(
+                        id.clone(),
+                        error_message.clone().unwrap_or_else(|| format!("{} is required", name)),
+                    );
+                } else if !val.is_empty() && !is_valid_url(val) {
+                    errors.insert(
+                        id.clone(),
+                        error_message.clone().unwrap_or_else(|| format!("{} is not a valid URL", name)),
+                    );
+                }
+            }
+            Component::Combobox { id, required, label, .. } => {
+                if *required {
+                    let val = state.text_values.get(id).map(|s| s.as_str()).unwrap_or("");
+                    if val.is_empty() {
+                        let name = label.as_deref().unwrap_or(id.as_str());
+                        errors.insert(id.clone(), format!("{} is required", name));
+                    }
+                }
+            }
+            Component::DatetimePicker { id, required, label, .. } => {
+                if *required {
+                    let empty = state
+                        .pair_text_values
+                        .get(id)
+                        .map(|(d, t)| d.is_empty() || t.is_empty())
+                        .unwrap_or(true);
+                    if empty {
+                        let name = label.as_deref().unwrap_or(id.as_str());
+                        errors.insert(id.clone(), format!("{} is required", name));
+                    }
+                }
+            }
+            Component::DateRange { id, required, label, .. } => {
+                if *required {
+                    let empty = state
+                        .pair_text_values
+                        .get(id)
+                        .map(|(s, e)| s.is_empty() || e.is_empty())
+                        .unwrap_or(true);
+                    if empty {
+                        let name = label.as_deref().unwrap_or(id.as_str());
+                        errors.insert(id.clone(), format!("{} is required", name));
+                    }
+                }
             }
             _ => {}
         }
     }
+}
+
+fn is_valid_email(s: &str) -> bool {
+    // Cheap practical check: one '@', non-empty local part, dot in the domain, no whitespace.
+    if s.chars().any(char::is_whitespace) { return false; }
+    let mut parts = s.splitn(2, '@');
+    let local = parts.next().unwrap_or("");
+    let domain = parts.next().unwrap_or("");
+    !local.is_empty() && domain.contains('.') && !domain.starts_with('.') && !domain.ends_with('.')
+}
+
+fn is_valid_url(s: &str) -> bool {
+    let lower = s.to_ascii_lowercase();
+    (lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("ftp://"))
+        && !s.chars().any(char::is_whitespace)
+        && s.len() > 8
 }
 
 fn validate_text_field(

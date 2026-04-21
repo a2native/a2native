@@ -48,23 +48,38 @@
         { "$ref": "#/$defs/Code" },
         { "$ref": "#/$defs/Image" },
         { "$ref": "#/$defs/Divider" },
+        { "$ref": "#/$defs/Alert" },
+        { "$ref": "#/$defs/Link" },
+        { "$ref": "#/$defs/Progress" },
         { "$ref": "#/$defs/TextField" },
         { "$ref": "#/$defs/Textarea" },
         { "$ref": "#/$defs/Password" },
+        { "$ref": "#/$defs/Email" },
+        { "$ref": "#/$defs/Url" },
         { "$ref": "#/$defs/NumberInput" },
         { "$ref": "#/$defs/DatePicker" },
         { "$ref": "#/$defs/TimePicker" },
+        { "$ref": "#/$defs/DatetimePicker" },
+        { "$ref": "#/$defs/DateRange" },
+        { "$ref": "#/$defs/ColorPicker" },
         { "$ref": "#/$defs/Dropdown" },
+        { "$ref": "#/$defs/Combobox" },
+        { "$ref": "#/$defs/MultiSelect" },
         { "$ref": "#/$defs/Checkbox" },
         { "$ref": "#/$defs/Toggle" },
         { "$ref": "#/$defs/CheckboxGroup" },
         { "$ref": "#/$defs/RadioGroup" },
         { "$ref": "#/$defs/Slider" },
+        { "$ref": "#/$defs/RangeSlider" },
         { "$ref": "#/$defs/Rating" },
+        { "$ref": "#/$defs/Tags" },
         { "$ref": "#/$defs/FileUpload" },
+        { "$ref": "#/$defs/Hidden" },
         { "$ref": "#/$defs/Button" },
         { "$ref": "#/$defs/Card" },
-        { "$ref": "#/$defs/Row" }
+        { "$ref": "#/$defs/Row" },
+        { "$ref": "#/$defs/Collapsible" },
+        { "$ref": "#/$defs/Spacer" }
       ]
     },
     "SelectOption": {
@@ -373,6 +388,203 @@
         "type":     { "const": "code" },
         "content":  { "type": "string", "description": "Source code to display (read-only)." },
         "language": { "type": "string", "description": "Optional language hint, e.g. 'rust', 'json'." }
+      }
+    },
+    "Email": {
+      "type": "object",
+      "required": ["id", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "id":            { "type": "string" },
+        "type":          { "const": "email" },
+        "label":         { "type": "string" },
+        "placeholder":   { "type": "string" },
+        "required":      { "type": "boolean", "default": false },
+        "default_value": { "type": "string" },
+        "error_message": { "type": "string" }
+      },
+      "x-output": "string (validated as email address)"
+    },
+    "Url": {
+      "type": "object",
+      "required": ["id", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "id":            { "type": "string" },
+        "type":          { "const": "url" },
+        "label":         { "type": "string" },
+        "placeholder":   { "type": "string" },
+        "required":      { "type": "boolean", "default": false },
+        "default_value": { "type": "string" },
+        "error_message": { "type": "string" }
+      },
+      "x-output": "string (validated as http(s)/ftp URL)"
+    },
+    "Hidden": {
+      "type": "object",
+      "required": ["id", "type", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "id":    { "type": "string" },
+        "type":  { "const": "hidden" },
+        "value": { "description": "Arbitrary JSON value passed through verbatim to the output." }
+      },
+      "x-output": "verbatim value"
+    },
+    "DatetimePicker": {
+      "type": "object",
+      "required": ["id", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "id":            { "type": "string" },
+        "type":          { "const": "datetime-picker" },
+        "label":         { "type": "string" },
+        "required":      { "type": "boolean", "default": false },
+        "default_value": { "type": "string", "description": "YYYY-MM-DD HH:MM" }
+      },
+      "x-output": "string (YYYY-MM-DD HH:MM)"
+    },
+    "DateRange": {
+      "type": "object",
+      "required": ["id", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "id":            { "type": "string" },
+        "type":          { "const": "date-range" },
+        "label":         { "type": "string" },
+        "required":      { "type": "boolean", "default": false },
+        "default_start": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "default_end":   { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" }
+      },
+      "x-output": "object { start, end }"
+    },
+    "ColorPicker": {
+      "type": "object",
+      "required": ["id", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "id":            { "type": "string" },
+        "type":          { "const": "color-picker" },
+        "label":         { "type": "string" },
+        "default_value": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" }
+      },
+      "x-output": "string (#RRGGBB)"
+    },
+    "RangeSlider": {
+      "type": "object",
+      "required": ["id", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "id":          { "type": "string" },
+        "type":        { "const": "range-slider" },
+        "label":       { "type": "string" },
+        "min":         { "type": "number", "default": 0 },
+        "max":         { "type": "number", "default": 100 },
+        "step":        { "type": "number" },
+        "default_min": { "type": "number" },
+        "default_max": { "type": "number" }
+      },
+      "x-output": "object { min, max }"
+    },
+    "MultiSelect": {
+      "type": "object",
+      "required": ["id", "type", "options"],
+      "additionalProperties": false,
+      "properties": {
+        "id":             { "type": "string" },
+        "type":           { "const": "multi-select" },
+        "label":          { "type": "string" },
+        "placeholder":    { "type": "string" },
+        "options":        { "type": "array", "items": { "$ref": "#/$defs/SelectOption" } },
+        "default_values": { "type": "array", "items": { "type": "string" } }
+      },
+      "x-output": "string[]"
+    },
+    "Combobox": {
+      "type": "object",
+      "required": ["id", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "id":            { "type": "string" },
+        "type":          { "const": "combobox" },
+        "label":         { "type": "string" },
+        "placeholder":   { "type": "string" },
+        "options":       { "type": "array", "items": { "$ref": "#/$defs/SelectOption" } },
+        "required":      { "type": "boolean", "default": false },
+        "default_value": { "type": "string" }
+      },
+      "x-output": "string (typed or picked)"
+    },
+    "Tags": {
+      "type": "object",
+      "required": ["id", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "id":             { "type": "string" },
+        "type":           { "const": "tags" },
+        "label":          { "type": "string" },
+        "placeholder":    { "type": "string" },
+        "default_values": { "type": "array", "items": { "type": "string" } },
+        "max":            { "type": "integer", "minimum": 1 }
+      },
+      "x-output": "string[]"
+    },
+    "Alert": {
+      "type": "object",
+      "required": ["id", "type", "content"],
+      "additionalProperties": false,
+      "properties": {
+        "id":      { "type": "string" },
+        "type":    { "const": "alert" },
+        "kind":    { "type": "string", "enum": ["info", "success", "warning", "error"], "default": "info" },
+        "title":   { "type": "string" },
+        "content": { "type": "string" }
+      }
+    },
+    "Link": {
+      "type": "object",
+      "required": ["id", "type", "label", "url"],
+      "additionalProperties": false,
+      "properties": {
+        "id":    { "type": "string" },
+        "type":  { "const": "link" },
+        "label": { "type": "string" },
+        "url":   { "type": "string", "format": "uri" }
+      }
+    },
+    "Progress": {
+      "type": "object",
+      "required": ["id", "type", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "id":           { "type": "string" },
+        "type":         { "const": "progress" },
+        "label":        { "type": "string" },
+        "value":        { "type": "number" },
+        "max":          { "type": "number", "default": 1.0 },
+        "show_percent": { "type": "boolean", "default": false }
+      }
+    },
+    "Collapsible": {
+      "type": "object",
+      "required": ["id", "type", "title", "children"],
+      "additionalProperties": false,
+      "properties": {
+        "id":       { "type": "string" },
+        "type":     { "const": "collapsible" },
+        "title":    { "type": "string" },
+        "open":     { "type": "boolean", "default": true },
+        "children": { "type": "array", "items": { "$ref": "#/$defs/Component" } }
+      }
+    },
+    "Spacer": {
+      "type": "object",
+      "required": ["id", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "id":   { "type": "string" },
+        "type": { "const": "spacer" },
+        "size": { "type": "number", "minimum": 0, "default": 8 }
       }
     }
   }

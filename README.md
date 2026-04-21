@@ -129,10 +129,13 @@ The machine-readable schema:
 | type | required fields | description |
 |---|---|---|
 | `text` | `id`, `content` | Plain text label |
-| `markdown` | `id`, `content` | Headings (`#`/`##`/`###`) and `**bold**` |
+| `markdown` | `id`, `content` | Headings, `**bold**`, `*italic*`, `` `code` ``, links, lists |
 | `code` | `id`, `content` | Read-only code block; `language` optional hint |
 | `image` | `id`, `src` | Image from file path or URL; `alt` optional |
 | `divider` | `id` | Horizontal separator |
+| `alert` | `id`, `content` | Colored callout; `kind`: `info` (default) / `success` / `warning` / `error`; optional `title` |
+| `link` | `id`, `label`, `url` | Clickable external hyperlink |
+| `progress` | `id`, `value` | Read-only progress bar; `max` (default 1.0), `show_percent` |
 
 #### Input
 
@@ -141,17 +144,27 @@ The machine-readable schema:
 | `text-field` | `label`, `placeholder`, `required`, `default_value` | `string` |
 | `textarea` | `label`, `placeholder`, `required`, `default_value` | `string` |
 | `password` | `label`, `placeholder`, `required` | `string` |
+| `email` | `label`, `placeholder`, `required`, `default_value` | `string` (validated) |
+| `url` | `label`, `placeholder`, `required`, `default_value` | `string` (validated) |
 | `number-input` | `label`, `min`, `max`, `step`, `default_value` | `number` |
 | `date-picker` | `label`, `required`, `default_value` (YYYY-MM-DD) | `string` |
 | `time-picker` | `label`, `required`, `default_value` (HH:MM) | `string` |
+| `datetime-picker` | `label`, `required`, `default_value` (YYYY-MM-DD HH:MM) | `string` |
+| `date-range` | `label`, `required`, `default_start`, `default_end` | `{ start, end }` |
+| `color-picker` | `label`, `default_value` (#RRGGBB) | `string` (`#RRGGBB`) |
 | `dropdown` | `label`, `options`, `required`, `default_value` | `string` |
+| `combobox` | `label`, `options`, `required`, `default_value` | `string` (typed or picked) |
+| `multi-select` | `label`, `options`, `default_values`, `placeholder` | `string[]` |
 | `checkbox` | `label`, `default_value` | `boolean` |
 | `toggle` | `label`, `default_value` | `boolean` |
 | `checkbox-group` | `label`, `options`, `default_values` | `string[]` |
 | `radio-group` | `label`, `options`, `required`, `default_value` | `string` |
 | `slider` | `label`, `min` (0), `max` (100), `step`, `default_value` | `number` |
+| `range-slider` | `label`, `min`, `max`, `step`, `default_min`, `default_max` | `{ min, max }` |
 | `rating` | `label`, `max` (5), `default_value` | `number` (1–max, 0 if unrated) |
+| `tags` | `label`, `placeholder`, `default_values`, `max` | `string[]` |
 | `file-upload` | `label`, `accept`, `multiple` | `string` (path; `;`-separated if multiple) |
+| `hidden` | `value` (any JSON) | verbatim — not rendered |
 
 `options` / `default_values` use `{ "value": "...", "label": "..." }` objects.
 
@@ -167,6 +180,8 @@ The machine-readable schema:
 |---|---|---|
 | `card` | `title`, `children` | Bordered vertical group |
 | `row` | `children` | Horizontal side-by-side columns (equal width) |
+| `collapsible` | `title`, `open` (default true), `children` | Expand/collapse section |
+| `spacer` | `size` (default 8) | Explicit vertical space |
 
 ### 2. Google A2UI format (for A2UI agents)
 
